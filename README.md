@@ -470,6 +470,109 @@ docker compose up -d --no-deps api
 
 ---
 
+## Déploiement sur Raspberry Pi
+
+Le Raspberry Pi utilise une architecture **ARM64 (aarch64)**. L'image Docker
+est multi-plateforme mais doit être construite pour ARM64.
+
+> **Moteur de détection sur RPi** : PyTorch/CUDA n'est pas disponible sur ARM.
+> L'API bascule automatiquement sur **ONNX Runtime** si un fichier `.onnx` est
+> présent dans `runs/detect/models/yolo_impacts/weights/`, sinon sur la
+> **détection morphologique** (pas de poids nécessaire).
+>
+> Pour exporter les poids entraînés en ONNX depuis le PC :
+> ```powershell
+> python src/export_onnx.py
+> # → runs/detect/models/yolo_impacts/weights/best.onnx
+> ```
+
+---
+
+### Méthode A — Cross-build sur le PC (recommandée)
+
+Construire l'image ARM64 sur votre PC Windows, l'exporter comme fichier,
+puis la transférer sur le RPi. **La construction est faite sur votre PC,
+pas sur le RPi — beaucoup plus rapide.**
+
+#### 1. Construire l'image ARM64 sur le PC
+
+```powershell
+# Vérifier que le support multi-plateforme est actif (Docker Desktop l'inclut)
+docker buildx ls
+
+# Construire pour ARM64 et exporter dans un fichier tar
+docker buildx build --platform linux/arm64 `
+    -t shoot-score-api:rpi `
+    --output "type=docker,dest=shoot-score-api-rpi.tar" `
+    .
+```
+
+> La première build prend ~10-20 min (émulation QEMU pour ARM64).
+> Les suivantes sont plus rapides grâce au cache de couches.
+
+#### 2. Transférer l'image sur le RPi
+
+```powershell
+# Remplacer <IP_RPI> par l'adresse IP de votre Raspberry Pi
+scp shoot-score-api-rpi.tar pi@<IP_RPI>:~/
+scp docker-compose.rpi.yml  pi@<IP_RPI>:~/shoot-score/
+```
+
+#### 3. Charger et démarrer sur le RPi
+
+```bash
+# Sur le Raspberry Pi (SSH)
+docker load -i ~/shoot-score-api-rpi.tar
+
+# Créer les dossiers de volumes si besoin
+mkdir -p ~/shoot-score/runs/detect/models/yolo_impacts/weights
+mkdir -p ~/shoot-score/outputs
+
+# Copier les poids ONNX (optionnel, mais recommandé)
+# scp depuis le PC : scp best.onnx pi@<IP>:~/shoot-score/runs/detect/models/yolo_impacts/weights/
+
+cd ~/shoot-score
+docker compose -f docker-compose.rpi.yml up -d
+
+# Vérifier que l'API répond
+curl http://localhost:8000/health
+```
+
+---
+
+### Méthode B — Build directement sur le RPi (plus simple)
+
+Si vous préférez ne pas utiliser buildx, clonez le dépôt directement sur
+le RPi et laissez Docker construire l'image sur place. **Prévoir 30-40 min
+la première fois.**
+
+```bash
+# Sur le Raspberry Pi (SSH)
+git clone <URL_DU_REPO> ~/shoot-score
+cd ~/shoot-score
+
+# (Optionnel) Copier les poids ONNX depuis le PC
+# scp <PC>:runs/detect/models/yolo_impacts/weights/best.onnx \
+#     runs/detect/models/yolo_impacts/weights/
+
+docker compose -f docker-compose.rpi.yml up --build -d
+docker compose -f docker-compose.rpi.yml logs -f
+```
+
+---
+
+### Configurer l'app mobile pour pointer vers le RPi
+
+Dans l'application mobile, toucher ⚙️ → saisir `http://<IP_RPI>:8000`.
+
+Pour connaître l'IP du RPi :
+
+```bash
+hostname -I   # sur le RPi
+```
+
+---
+
 ## Workflow complet (première utilisation)
 
 ```powershell
