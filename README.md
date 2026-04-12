@@ -496,9 +496,12 @@ pas sur le RPi — beaucoup plus rapide.**
 
 #### 1. Construire l'image ARM64 sur le PC
 
+Le driver `docker` par défaut ne supporte pas les exports cross-plateforme.
+Il faut d'abord créer un builder avec le driver `docker-container` :
+
 ```powershell
-# Vérifier que le support multi-plateforme est actif (Docker Desktop l'inclut)
-docker buildx ls
+# À faire une seule fois (crée un builder persistant nommé "rpi-builder")
+docker buildx create --name rpi-builder --driver docker-container --use
 
 # Construire pour ARM64 et exporter dans un fichier tar
 docker buildx build --platform linux/arm64 `
@@ -507,8 +510,13 @@ docker buildx build --platform linux/arm64 `
     .
 ```
 
-> La première build prend ~10-20 min (émulation QEMU pour ARM64).
-> Les suivantes sont plus rapides grâce au cache de couches.
+> La première build prend ~15-30 min (émulation QEMU pour ARM64 +
+> téléchargement des dépendances). Les suivantes sont plus rapides
+> grâce au cache de couches de BuildKit.
+>
+> Pour vérifier que `rpi-builder` est actif : `docker buildx ls`
+> (une `*` indique le builder courant).
+> Pour revenir au builder par défaut après : `docker buildx use default`
 
 #### 2. Transférer l'image sur le RPi
 
