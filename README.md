@@ -20,6 +20,8 @@ Photo brute (téléphone)
 
 ## Prérequis
 
+### Développement local
+
 - Python 3.10+  
 - [uv](https://github.com/astral-sh/uv) (gestionnaire de paquets)
 
@@ -30,6 +32,12 @@ uv sync          # installe toutes les dépendances (torch CUDA inclus)
 > **GPU** : le projet est configuré pour PyTorch CUDA 12.4.
 > Si votre pilote est plus ancien, modifiez l'URL dans `pyproject.toml`
 > (`cu124` → `cu121` ou `cu118`) puis relancez `uv sync`.
+
+### Via Docker (recommandé pour le serveur API)
+
+- [Docker](https://docs.docker.com/get-docker/) 24+
+- [Docker Compose](https://docs.docker.com/compose/) v2
+- *(Optionnel)* [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) pour l'accélération GPU
 
 ---
 
@@ -289,16 +297,31 @@ Le PC et le téléphone doivent être sur le **même réseau Wi-Fi**.
 
 ### 1. Lancer le serveur API sur le PC
 
+**Option A — Windows (script bat)**
+
+```bat
+start-server.bat
+```
+
+Affiche automatiquement les IP locales disponibles et démarre le serveur
+sur `http://0.0.0.0:8000`. Utilise le venv `.venv\` créé par `uv sync`.
+
+**Option B — Ligne de commande (tous OS)**
+
 ```powershell
 # Installer les dépendances (fastapi + uvicorn)
 uv sync
 
-# Lancer le serveur (remplacer l'adresse si besoin)
+# Lancer le serveur
 uvicorn src.api:app --host 0.0.0.0 --port 8000
 
 # Trouver l'IP du PC sur le réseau local
 ipconfig   # chercher "Adresse IPv4" sous "Carte réseau sans fil Wi-Fi"
 ```
+
+**Option C — Docker (recommandé en production)**
+
+Voir la section [Déploiement Docker](#déploiement-docker) ci-dessous.
 
 ### 2. Installer et lancer l'application mobile
 
@@ -318,9 +341,37 @@ Toucher ⚙️ en haut à droite → saisir `http://<IP_DU_PC>:8000` → tester.
 
 | Méthode | URL | Description |
 |---|---|---|
-| `GET` | `/health` | Vérification du serveur |
-| `POST` | `/process` | Photo → impacts + image annotée |
-| `POST` | `/diff` | Avant + après → nouveaux impacts |
+| `GET` | `/health` | État du serveur (`status`, `device`, `engine`, `arch`) |
+| `POST` | `/process` | Photo → impacts détectés + image annotée (base64) |
+| `POST` | `/diff` | Avant + après → nouveaux impacts + image annotée |
+
+**`POST /process`** — paramètres `multipart/form-data` :
+
+| Champ | Type | Défaut | Description |
+|---|---|---|---|
+| `image` | fichier | — | Photo de la cible (JPEG/PNG) |
+| `hint_cx` | float | `0.5` | Coordonnée X normalisée (0–1) du centre estimé |
+| `hint_cy` | float | `0.5` | Coordonnée Y normalisée (0–1) du centre estimé |
+
+**`POST /diff`** — mêmes champs optionnels `hint_cx`/`hint_cy`, plus :
+
+| Champ | Type | Description |
+|---|---|---|
+| `before` | fichier | Photo avant la série |
+| `after` | fichier | Photo après la série |
+
+Les réponses incluent un champ `engine` indiquant le moteur utilisé
+(`"yolo"`, `"onnx"`, ou `"morpho"`).
+
+### Sélection automatique du moteur de détection
+
+L'API sélectionne automatiquement le meilleur moteur disponible au démarrage :
+
+| Moteur | Condition | Accélération |
+|---|---|---|
+| `yolo` | Ultralytics installé + poids `best.pt` présents | GPU CUDA ou CPU |
+| `onnx` | Poids `.onnx` présents (sans PyTorch) | CPU (ONNX Runtime) |
+| `morpho` | Aucun poids trouvé | CPU (OpenCV uniquement) |
 
 ### Structure de l'app mobile (`mobile/`)
 
@@ -340,6 +391,81 @@ mobile/
     storage.ts       Persistance locale (URL serveur)
   constants/
     Colors.ts        Palette de couleurs
+```
+
+---
+
+## Déploiement Docker
+
+L'API peut être lancée dans un conteneur sans installer Python ni les
+dépendances sur l'hôte. L'image est construite en **deux stages** pour
+minimiser la taille finale :
+
+1. **builder** (`python:3.13-slim`) — installe les dépendances via `uv sync --frozen` dans `/app/.venv`
+2. **runtime** (`python:3.13-slim`) — copie le venv + code source ; ajoute uniquement les librairies système nécessaires (`libglib2.0`, `libgl1`, `libgomp1`)
+
+### Construction et démarrage rapide
+
+```powershell
+# Construire l'image et démarrer le conteneur en arrière-plan
+docker compose up --build -d
+
+# Suivre les logs de démarrage
+docker compose logs -f
+
+# Vérifier que l'API répond
+curl http://localhost:8000/health
+
+# Arrêter et supprimer le conteneur
+docker compose down
+```
+
+### Volumes montés
+
+| Chemin hôte | Chemin conteneur | Mode | Description |
+|---|---|---|---|
+| `./runs` | `/app/runs` | lecture seule | Poids YOLO (`best.pt` dans `runs/detect/models/yolo_impacts/weights/`) |
+| `./outputs` | `/app/outputs` | lecture/écriture | Résultats annotés, persistés entre les redémarrages |
+
+> Les dossiers `outputs/api/` et `runs/detect/models/yolo_impacts/weights/`
+> sont créés vides dans l'image ; le conteneur démarre même si les volumes
+> ne sont pas montés (fallback vers le moteur morphologique).
+
+### Accélération GPU (NVIDIA)
+
+Le `docker-compose.yml` réserve automatiquement **1 GPU NVIDIA**
+(nécessite le [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)).
+Pour fonctionner en **mode CPU uniquement**, supprimer le bloc `deploy` :
+
+```yaml
+# Retirer dans docker-compose.yml pour désactiver le GPU :
+deploy:
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: 1
+          capabilities: [gpu]
+```
+
+### Healthcheck intégré
+
+Docker vérifie la santé du conteneur toutes les **30 secondes** en appelant
+`/health`. L'état est visible dans `docker ps` (colonne `STATUS`) :
+
+```
+CONTAINER ID   IMAGE                  STATUS
+abc123def456   shoot-score-api:latest Up 2 minutes (healthy)
+```
+
+### Rebuilder après modification du code
+
+```powershell
+# Reconstruire uniquement l'image (sans redémarrer les autres services)
+docker compose build api
+
+# Redémarrer avec la nouvelle image
+docker compose up -d --no-deps api
 ```
 
 ---
