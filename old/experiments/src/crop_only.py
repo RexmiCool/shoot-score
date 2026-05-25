@@ -3,9 +3,10 @@ import numpy as np
 import argparse
 from pathlib import Path
 
-BLACK_DISK_RADIUS_MM   = 100.0
+BLACK_DISK_RADIUS_MM = 100.0
 OUTER_CIRCLE_RADIUS_MM = 250.0
 N_INTERMEDIATE = 5
+
 
 def _find_black_disk_in_image(img):
     h, w = img.shape[:2]
@@ -13,7 +14,7 @@ def _find_black_disk_in_image(img):
     blur = cv2.GaussianBlur(gray, (9, 9), 0)
     _, mask = cv2.threshold(blur, 60, 255, cv2.THRESH_BINARY_INV)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel, iterations=2)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
     cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not cnts:
@@ -27,7 +28,7 @@ def _find_black_disk_in_image(img):
         if area < min_area:
             continue
         peri = cv2.arcLength(cnt, True)
-        circ = 4 * np.pi * area / (peri ** 2) if peri > 0 else 0
+        circ = 4 * np.pi * area / (peri**2) if peri > 0 else 0
         if circ < 0.5:
             continue
         (cx, cy), r = cv2.minEnclosingCircle(cnt)
@@ -40,12 +41,13 @@ def _find_black_disk_in_image(img):
     _, _, cx, cy, r = candidates[0]
     return int(cx), int(cy), int(r), BLACK_DISK_RADIUS_MM / r
 
+
 def crop_target(img_orig, debug_dir=None, stem=""):
     result = _find_black_disk_in_image(img_orig)
     if result is None:
         return None
     cx0, cy0, r_disk0, mm_per_px0 = result
-    r_outer0   = int(OUTER_CIRCLE_RADIUS_MM / mm_per_px0)
+    r_outer0 = int(OUTER_CIRCLE_RADIUS_MM / mm_per_px0)
     margin_px0 = int(10.0 / mm_per_px0)
     half = r_outer0 + margin_px0
     x1 = max(0, cx0 - half)
@@ -60,6 +62,7 @@ def crop_target(img_orig, debug_dir=None, stem=""):
     # if img_crop.shape[0] > remove_bottom_px:
     #     img_crop = img_crop[:img_crop.shape[0] - remove_bottom_px, :]
     return img_crop
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -92,6 +95,7 @@ def main():
             print(f"Crop sauvegardé : {crop_path}")
         else:
             print(f"Cible non trouvée dans {img_path}")
+
 
 if __name__ == "__main__":
     main()

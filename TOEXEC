@@ -1,0 +1,14 @@
+uv run python src/detect_impacts_heatmap.py C:\Users\Utilisateur\Repos\shoot-score\outputs\20241117_095245\20241117_095245_flat.jpg --show
+Model weight L1 sum: 1535.502246
+Heatmap max value: 0.2369101
+[OK] 0 impacts → 20241117_095245_impacts_heatmap.jpg
+
+
+
+uv run python src/detect_impacts_heatmap.py C:\Users\Utilisateur\Repos\shoot-score\outputs\20241117_095245\20241117_095245_flat.jpg --show
+
+# Dense heatmap workflow (PC -> mobile)
+uv run python src/prepare_heatmap_dataset.py outputs --out data/impacts_heatmap --val-ratio 0.2
+uv run python src/train_heatmap_cnn.py data/impacts_heatmap --epochs 60 --batch 4 --lr 1e-3
+uv run python src/export_heatmap_tflite.py --weights models/impacts_heatmap/model_best.pt --tflite mobile/android/app/src/main/assets/impact_heatmap_cnn.tflite
+uv run python src/test_heatmap_tflite.py outputs/20241117_095245/20241117_095245_flat.jpg --model mobile/android/app/src/main/assets/impact_heatmap_cnn.tflite

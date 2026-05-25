@@ -26,22 +26,22 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-MARK_RADIUS   = 12     # rayon du cercle de marquage (px affiché)
-MARK_COLOR    = (0, 255, 255)   # jaune vif
-DELETE_RADIUS = 30     # distance max pour la suppression au clic droit
-FONT          = cv2.FONT_HERSHEY_SIMPLEX
-DISPLAY_MAX   = 1040   # taille max d'affichage (la flat est déjà 1040×1040)
+MARK_RADIUS = 12  # rayon du cercle de marquage (px affiché)
+MARK_COLOR = (0, 255, 255)  # jaune vif
+DELETE_RADIUS = 30  # distance max pour la suppression au clic droit
+FONT = cv2.FONT_HERSHEY_SIMPLEX
+DISPLAY_MAX = 1056  # taille max d'affichage (la flat est déjà 1056×1056)
 
 
 class Labeler:
     def __init__(self, flat_path: Path):
-        self.flat_path  = flat_path
-        self.stem       = flat_path.stem.removesuffix("_flat")
-        self.json_path  = flat_path.parent / f"{self.stem}_labels.json"
+        self.flat_path = flat_path
+        self.stem = flat_path.stem.removesuffix("_flat")
+        self.json_path = flat_path.parent / f"{self.stem}_labels.json"
 
         # Utiliser *_rings.jpg s'il existe (meilleur contexte visuel)
         rings_path = flat_path.parent / f"{self.stem}_rings.jpg"
-        src_path   = rings_path if rings_path.exists() else flat_path
+        src_path = rings_path if rings_path.exists() else flat_path
         self.base_img = cv2.imread(str(src_path))
         if self.base_img is None:
             raise FileNotFoundError(f"Image introuvable : {src_path}")
@@ -65,15 +65,14 @@ class Labeler:
         if self.json_path.exists():
             with open(self.json_path, encoding="utf-8") as f:
                 data = json.load(f)
-            self.impacts = [(int(p["cx_px"]), int(p["cy_px"]))
-                            for p in data.get("impacts", [])]
+            self.impacts = [(int(p["cx_px"]), int(p["cy_px"])) for p in data.get("impacts", [])]
             print(f"[LOAD] {len(self.impacts)} impact(s) chargé(s) depuis {self.json_path.name}")
         else:
             print(f"[NEW ] Pas de fichier existant — on repart de zéro.")
 
     def _save(self):
         data = {
-            "source":  self.flat_path.name,
+            "source": self.flat_path.name,
             "impacts": [{"cx_px": cx, "cy_px": cy} for cx, cy in self.impacts],
         }
         with open(self.json_path, "w", encoding="utf-8") as f:
@@ -89,21 +88,27 @@ class Labeler:
         for i, (cx, cy) in enumerate(self.impacts, 1):
             cv2.circle(disp, (cx, cy), MARK_RADIUS, MARK_COLOR, 2, cv2.LINE_AA)
             cv2.circle(disp, (cx, cy), 3, MARK_COLOR, -1)
-            cv2.putText(disp, str(i), (cx + MARK_RADIUS + 3, cy + 5),
-                        FONT, 0.50, MARK_COLOR, 1, cv2.LINE_AA)
+            cv2.putText(
+                disp, str(i), (cx + MARK_RADIUS + 3, cy + 5), FONT, 0.50, MARK_COLOR, 1, cv2.LINE_AA
+            )
 
         # Bandeau info
         overlay = disp.copy()
         cv2.rectangle(overlay, (0, h - 28), (w, h), (20, 20, 20), -1)
         cv2.addWeighted(overlay, 0.6, disp, 0.4, 0, disp)
-        cv2.putText(disp,
-                    f"Impacts : {len(self.impacts)}  |  "
-                    "Clic G=ajouter  Clic D=suppr  S=save  Z=annuler  Q=quitter",
-                    (8, h - 8), FONT, 0.40, (220, 220, 220), 1)
+        cv2.putText(
+            disp,
+            f"Impacts : {len(self.impacts)}  |  "
+            "Clic G=ajouter  Clic D=suppr  S=save  Z=annuler  Q=quitter",
+            (8, h - 8),
+            FONT,
+            0.40,
+            (220, 220, 220),
+            1,
+        )
 
         if self.scale != 1.0:
-            disp = cv2.resize(disp, (self.disp_w, self.disp_h),
-                              interpolation=cv2.INTER_AREA)
+            disp = cv2.resize(disp, (self.disp_w, self.disp_h), interpolation=cv2.INTER_AREA)
         return disp
 
     # ── Souris ─────────────────────────────────────────────────────────────────
@@ -123,7 +128,7 @@ class Labeler:
                 nearest_i = int(np.argmin(dists))
                 if dists[nearest_i] <= DELETE_RADIUS / self.scale:
                     removed = self.impacts.pop(nearest_i)
-                    print(f"[DEL ] #{nearest_i+1} supprimé → ({removed[0]},{removed[1]})")
+                    print(f"[DEL ] #{nearest_i + 1} supprimé → ({removed[0]},{removed[1]})")
 
     # ── Boucle principale ──────────────────────────────────────────────────────
 
@@ -132,32 +137,34 @@ class Labeler:
         Lance la boucle interactive. Retourne 'next', 'prev' ou 'quit'
         selon la touche de sortie (pour navigation entre images).
         """
-        print(f"\n[{self.flat_path.name}] Clic G=ajouter  Clic D=suppr  "
-              "S=save  Z=annuler  N=suivante  P=précédente  Q=quitter\n")
+        print(
+            f"\n[{self.flat_path.name}] Clic G=ajouter  Clic D=suppr  "
+            "S=save  Z=annuler  N=suivante  P=précédente  Q=quitter\n"
+        )
         action = "next"
         while True:
             cv2.imshow(self.win, self._render())
             key = cv2.waitKey(30) & 0xFF
 
-            if key in (ord('q'), ord('Q'), 27):   # Q ou Échap → quitter
+            if key in (ord("q"), ord("Q"), 27):  # Q ou Échap → quitter
                 self._save()
                 action = "quit"
                 break
-            elif key in (ord('n'), ord('N')):      # N → image suivante
+            elif key in (ord("n"), ord("N")):  # N → image suivante
                 self._save()
                 action = "next"
                 break
-            elif key in (ord('p'), ord('P')):      # P → image précédente
+            elif key in (ord("p"), ord("P")):  # P → image précédente
                 self._save()
                 action = "prev"
                 break
-            elif key in (ord('s'), ord('S')):
+            elif key in (ord("s"), ord("S")):
                 self._save()
-            elif key in (ord('z'), ord('Z')):
+            elif key in (ord("z"), ord("Z")):
                 if self.impacts:
                     removed = self.impacts.pop()
                     print(f"[UNDO] Supprimé → ({removed[0]},{removed[1]})")
-            elif key in (ord('r'), ord('R')):
+            elif key in (ord("r"), ord("R")):
                 self._load()
 
         cv2.destroyAllWindows()
@@ -175,15 +182,12 @@ def _collect_images(path: Path) -> list[Path]:
     if path.is_file():
         return [path]
     results = sorted(
-        f for f in path.rglob("*_flat.*")
-        if f.suffix.lower() in IMAGE_EXTENSIONS
-        and not f.stem.startswith("_")
+        f
+        for f in path.rglob("*_flat.*")
+        if f.suffix.lower() in IMAGE_EXTENSIONS and not f.stem.startswith("_")
     )
     if not results:
-        results = sorted(
-            f for f in path.glob("*.*")
-            if f.suffix.lower() in IMAGE_EXTENSIONS
-        )
+        results = sorted(f for f in path.glob("*.*") if f.suffix.lower() in IMAGE_EXTENSIONS)
     return results
 
 
@@ -191,11 +195,16 @@ def _collect_images(path: Path) -> list[Path]:
 
 if __name__ == "__main__":
     import argparse
+
     ap = argparse.ArgumentParser(
-        description="Labéliseur d'impacts. Accepte un fichier ou un dossier.")
+        description="Labéliseur d'impacts. Accepte un fichier ou un dossier."
+    )
     ap.add_argument("path", help="Image *_flat.jpg ou dossier")
-    ap.add_argument("--skip-done", action="store_true",
-                    help="Ignorer les images déjà labélisées (*_labels.json existant)")
+    ap.add_argument(
+        "--skip-done",
+        action="store_true",
+        help="Ignorer les images déjà labélisées (*_labels.json existant)",
+    )
     args = ap.parse_args()
 
     root = Path(args.path)
@@ -210,8 +219,11 @@ if __name__ == "__main__":
 
     if args.skip_done:
         before = len(images)
-        images = [p for p in images
-                  if not (p.parent / (p.stem.removesuffix("_flat") + "_labels.json")).exists()]
+        images = [
+            p
+            for p in images
+            if not (p.parent / (p.stem.removesuffix("_flat") + "_labels.json")).exists()
+        ]
         print(f"[FILTRE] {before - len(images)} déjà labélisée(s) ignorée(s)")
 
     print(f"{len(images)} image(s) à labéliser.")

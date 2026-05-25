@@ -1,4 +1,3 @@
-
 """
 Étape 3 : détection et identification des anneaux concentriques de la cible.
 
@@ -63,9 +62,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 from localize_target import _open_file
-from flatten_target import (
-    OUTPUT_CENTER, MM_PER_PX_OUT
-)
+from flatten_target import OUTPUT_CENTER, MM_PER_PX_OUT
 
 
 # ── Géométrie connue de la cible ───────────────────────────────────────────────
@@ -84,6 +81,7 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
 
 # ── Helpers visuels ────────────────────────────────────────────────────────────
 
+
 def _draw_dashed_circle(
     img: np.ndarray,
     center: tuple[int, int],
@@ -96,11 +94,10 @@ def _draw_dashed_circle(
     for i in range(0, n_dashes, 2):
         a1 = 2 * pi * i / n_dashes
         a2 = 2 * pi * (i + 1) / n_dashes
-        p1 = (int(center[0] + radius * np.cos(a1)),
-              int(center[1] + radius * np.sin(a1)))
-        p2 = (int(center[0] + radius * np.cos(a2)),
-              int(center[1] + radius * np.sin(a2)))
+        p1 = (int(center[0] + radius * np.cos(a1)), int(center[1] + radius * np.sin(a1)))
+        p2 = (int(center[0] + radius * np.cos(a2)), int(center[1] + radius * np.sin(a2)))
         cv2.line(img, p1, p2, color, thickness, cv2.LINE_AA)
+
 
 def _draw_dashed_ellipse(
     img: np.ndarray,
@@ -115,20 +112,19 @@ def _draw_dashed_ellipse(
     Les traits et les espaces alternent par paires d'incréments angulaires.
     """
     (ecx, ecy), (ea, eb), eangle = ellipse
-    a = ea / 2          # demi-axe 1
-    b = eb / 2          # demi-axe 2
+    a = ea / 2  # demi-axe 1
+    b = eb / 2  # demi-axe 2
     theta = np.deg2rad(eangle)
     cos_t, sin_t = np.cos(theta), np.sin(theta)
 
     for i in range(0, n_dashes, 2):
-        t1 = 2 * pi * i       / n_dashes
+        t1 = 2 * pi * i / n_dashes
         t2 = 2 * pi * (i + 1) / n_dashes
         x1 = ecx + a * np.cos(t1) * cos_t - b * np.sin(t1) * sin_t
         y1 = ecy + a * np.cos(t1) * sin_t + b * np.sin(t1) * cos_t
         x2 = ecx + a * np.cos(t2) * cos_t - b * np.sin(t2) * sin_t
         y2 = ecy + a * np.cos(t2) * sin_t + b * np.sin(t2) * cos_t
-        cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)),
-                 color, thickness, cv2.LINE_AA)
+        cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness, cv2.LINE_AA)
 
 
 def _save_profile_image(
@@ -148,16 +144,13 @@ def _save_profile_image(
         return
 
     pmax = float(profile.max()) or 1.0
-    sig  = (profile / pmax * (ph - 50)).astype(int)
+    sig = (profile / pmax * (ph - 50)).astype(int)
 
     # Courbe du profil (gris)
     for i in range(n - 1):
         x1 = int(i * pw / n)
         x2 = int((i + 1) * pw / n)
-        cv2.line(canvas,
-                 (x1, ph - sig[i] - 1),
-                 (x2, ph - sig[i + 1] - 1),
-                 (160, 160, 160), 1)
+        cv2.line(canvas, (x1, ph - sig[i] - 1), (x2, ph - sig[i + 1] - 1), (160, 160, 160), 1)
 
     # Anneaux connus (bleu vertical)
     for r_mm in KNOWN_RINGS_MM:
@@ -165,8 +158,15 @@ def _save_profile_image(
         if 0 <= r_px_rel < n:
             xk = int(r_px_rel * pw / n)
             cv2.line(canvas, (xk, ph - 20), (xk, ph - 5), (200, 120, 0), 1)
-            cv2.putText(canvas, f"{int(r_mm)}", (xk - 8, ph - 22),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.28, (200, 120, 0), 1)
+            cv2.putText(
+                canvas,
+                f"{int(r_mm)}",
+                (xk - 8, ph - 22),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.28,
+                (200, 120, 0),
+                1,
+            )
 
     # Pics détectés (vert si matché, rouge sinon)
     matched_px_set = set(int(round(v)) for v in matches.values())
@@ -177,18 +177,25 @@ def _save_profile_image(
         matched = r_px_abs in matched_px_set
         color = (0, 220, 0) if matched else (0, 80, 220)
         cv2.line(canvas, (xp, 0), (xp, ph - 30), color, 1)
-        cv2.putText(canvas, f"{r_mm_est:.0f}mm",
-                    (xp + 2, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.30, color, 1)
+        cv2.putText(
+            canvas, f"{r_mm_est:.0f}mm", (xp + 2, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.30, color, 1
+        )
 
     cv2.putText(
         canvas,
         "Profil radial  |  Vert=detecte matche  Bleu=detecte non matche  Orange=anneau connu",
-        (8, ph - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.34, (120, 120, 120), 1)
+        (8, ph - 6),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.34,
+        (120, 120, 120),
+        1,
+    )
 
     cv2.imwrite(str(out_path), canvas)
 
 
 # ── Étape 3-A : profil radial de gradient ─────────────────────────────────────
+
 
 def radial_edge_profile(
     gray: np.ndarray,
@@ -207,33 +214,33 @@ def radial_edge_profile(
     """
     h, w = gray.shape
 
-    blur  = cv2.GaussianBlur(gray, (5, 5), 0)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blur, 20, 60)
 
     # Distance entière de chaque pixel au centre
-    y_g, x_g  = np.mgrid[0:h, 0:w]
-    dist_f     = np.sqrt((x_g.astype(np.float32) - cx) ** 2 +
-                         (y_g.astype(np.float32) - cy) ** 2)
-    dist_int   = np.round(dist_f).astype(np.int32)
+    y_g, x_g = np.mgrid[0:h, 0:w]
+    dist_f = np.sqrt((x_g.astype(np.float32) - cx) ** 2 + (y_g.astype(np.float32) - cy) ** 2)
+    dist_int = np.round(dist_f).astype(np.int32)
 
-    r_total    = int(dist_int.max()) + 1
-    edge_sum   = np.zeros(r_total, dtype=np.float64)
-    pixel_cnt  = np.zeros(r_total, dtype=np.int64)
+    r_total = int(dist_int.max()) + 1
+    edge_sum = np.zeros(r_total, dtype=np.float64)
+    pixel_cnt = np.zeros(r_total, dtype=np.int64)
 
     # Accumulation vectorisée par rayon
-    np.add.at(edge_sum,  dist_int.ravel(), edges.ravel().astype(np.float64))
+    np.add.at(edge_sum, dist_int.ravel(), edges.ravel().astype(np.float64))
     np.add.at(pixel_cnt, dist_int.ravel(), 1)
 
     # Normaliser par le nombre de pixels à chaque rayon (≈ 2πr)
-    profile       = np.zeros(r_total, dtype=np.float64)
-    nonzero       = pixel_cnt > 0
+    profile = np.zeros(r_total, dtype=np.float64)
+    nonzero = pixel_cnt > 0
     profile[nonzero] = edge_sum[nonzero] / pixel_cnt[nonzero]
 
     r_max_clamp = min(r_max, r_total - 1)
-    return profile[r_min: r_max_clamp + 1].copy(), edges
+    return profile[r_min : r_max_clamp + 1].copy(), edges
 
 
 # ── Étape 3-B : détection des pics ────────────────────────────────────────────
+
 
 def find_peaks(
     signal: np.ndarray,
@@ -252,9 +259,9 @@ def find_peaks(
         return []
 
     thresh = float(signal.max()) * rel_threshold
-    peaks  = []
-    n      = len(signal)
-    i      = 0
+    peaks = []
+    n = len(signal)
+    i = 0
 
     while i < n:
         if signal[i] > thresh:
@@ -273,11 +280,13 @@ def find_peaks(
 
 # ── Étape 3-C : matching et étalonnage ────────────────────────────────────────
 
+
 def match_and_calibrate(
     detected_px: list[float],
     known_mm: list[float],
     mm_per_px_init: float,
-    max_error_mm: float = 15.0) -> tuple[dict[float, float], float]:
+    max_error_mm: float = 15.0,
+) -> tuple[dict[float, float], float]:
     """
     Assigne chaque pic détecté (px) à l'anneau théorique le plus proche (mm).
     Étalonnage : mm = k × px  (k = mm_per_px calibré, sans ordonnée car
@@ -290,12 +299,12 @@ def match_and_calibrate(
     if not detected_px:
         return {}, mm_per_px_init
 
-    matches  = {}
+    matches = {}
     used_idx = set()
 
     for r_mm in known_mm:
         r_px_expected = r_mm / mm_per_px_init
-        best_err  = float("inf")
+        best_err = float("inf")
         best_item = None
 
         for i, r_px in enumerate(detected_px):
@@ -303,7 +312,7 @@ def match_and_calibrate(
                 continue
             err_mm = abs(r_px * mm_per_px_init - r_mm)
             if err_mm < best_err and err_mm <= max_error_mm:
-                best_err  = err_mm
+                best_err = err_mm
                 best_item = (i, r_px)
 
         if best_item is not None:
@@ -313,7 +322,7 @@ def match_and_calibrate(
     # Étalonnage : k = argmin Σ(mm_i - k·px_i)²  → k = Σ(mm·px) / Σ(px²)
     if len(matches) >= 2:
         px_arr = np.array(list(matches.values()), dtype=np.float64)
-        mm_arr = np.array(list(matches.keys()),   dtype=np.float64)
+        mm_arr = np.array(list(matches.keys()), dtype=np.float64)
         mm_per_px_cal = float(np.dot(mm_arr, px_arr) / np.dot(px_arr, px_arr))
     else:
         mm_per_px_cal = mm_per_px_init
@@ -322,6 +331,7 @@ def match_and_calibrate(
 
 
 # ── Étape 3-D : ajustement d'ellipse sur un anneau ────────────────────────────
+
 
 def fit_ring_ellipse(
     edges: np.ndarray,
@@ -373,6 +383,7 @@ def fit_ring_ellipse(
 
 # ── Pipeline principale ────────────────────────────────────────────────────────
 
+
 def detect_rings(
     flat_img_path,
     output_dir: str | None = None,
@@ -391,8 +402,8 @@ def detect_rings(
         return None
 
     # Déduire le stem de l'image originale
-    stem_flat = flat_path.stem                               # "20250209_110103_flat"
-    stem      = stem_flat.removesuffix("_flat")              # "20250209_110103"
+    stem_flat = flat_path.stem  # "20250209_110103_flat"
+    stem = stem_flat.removesuffix("_flat")  # "20250209_110103"
 
     out_dir = Path(output_dir) / stem if output_dir else flat_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -403,71 +414,74 @@ def detect_rings(
         print(f"[ERREUR] Impossible de lire : {flat_path}")
         return None
 
-    h, w   = img.shape[:2]
-    gray   = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    h, w = img.shape[:2]
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     cx, cy = OUTPUT_CENTER, OUTPUT_CENTER
     mm_per_px_0 = MM_PER_PX_OUT
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"[IMAGE] {flat_path.name}  {w}x{h}px")
     print(f"[INIT ] centre=({cx},{cy})  mm/px={mm_per_px_0:.4f}")
 
     # ── Plage de recherche ─────────────────────────────────────────────────────
-    r_min_mm = KNOWN_RINGS_MM[0]  * 0.72   # 72mm  (un peu en dessous du disque)
-    r_max_mm = KNOWN_RINGS_MM[-1] * 1.15   # 287mm (un peu au-delà de l'anneau ext.)
+    r_min_mm = KNOWN_RINGS_MM[0] * 0.72  # 72mm  (un peu en dessous du disque)
+    r_max_mm = KNOWN_RINGS_MM[-1] * 1.15  # 287mm (un peu au-delà de l'anneau ext.)
     r_min_px = max(1, int(r_min_mm / mm_per_px_0))
-    r_max_px = min(int(r_max_mm / mm_per_px_0),
-                   min(cx, cy, w - cx, h - cy) - 5)
+    r_max_px = min(int(r_max_mm / mm_per_px_0), min(cx, cy, w - cx, h - cy) - 5)
 
-    print(f"[RANGE] r_min={r_min_px}px ({r_min_mm:.0f}mm)  "
-          f"r_max={r_max_px}px ({r_max_mm:.0f}mm)")
+    print(f"[RANGE] r_min={r_min_px}px ({r_min_mm:.0f}mm)  r_max={r_max_px}px ({r_max_mm:.0f}mm)")
 
     # ── Profil radial ──────────────────────────────────────────────────────────
     profile, edges = radial_edge_profile(gray, cx, cy, r_min_px, r_max_px)
 
-    min_sep_px = max(6, int(8.0 / mm_per_px_0))    # ≈ 8mm de séparation min
-    peaks_rel  = find_peaks(profile, min_separation=min_sep_px, rel_threshold=0.07)
-    peaks_px   = [float(p + r_min_px) for p in peaks_rel]
+    min_sep_px = max(6, int(8.0 / mm_per_px_0))  # ≈ 8mm de séparation min
+    peaks_rel = find_peaks(profile, min_separation=min_sep_px, rel_threshold=0.07)
+    peaks_px = [float(p + r_min_px) for p in peaks_rel]
 
-    print(f"[PICS ] {len(peaks_px)} pics : "
-          f"{[int(p) for p in peaks_px]} px  ~  "
-          f"{[round(p * mm_per_px_0) for p in peaks_px]} mm")
+    print(
+        f"[PICS ] {len(peaks_px)} pics : "
+        f"{[int(p) for p in peaks_px]} px  ~  "
+        f"{[round(p * mm_per_px_0) for p in peaks_px]} mm"
+    )
 
     if debug:
         cv2.imwrite(str(out_dir / f"{stem}_dbg_edges.jpg"), edges)
 
     # ── Matching + étalonnage ──────────────────────────────────────────────────
-    matches, mm_per_px_cal = match_and_calibrate(
-        peaks_px, KNOWN_RINGS_MM, mm_per_px_0)
+    matches, mm_per_px_cal = match_and_calibrate(peaks_px, KNOWN_RINGS_MM, mm_per_px_0)
 
     n_matched = len(matches)
-    print(f"[CALIB] {n_matched}/{len(KNOWN_RINGS_MM)} matchés  "
-          f"mm/px={mm_per_px_cal:.5f}  (nominal={mm_per_px_0:.5f}  "
-          f"D={abs(mm_per_px_cal - mm_per_px_0)/mm_per_px_0*100:.2f}%)") 
+    print(
+        f"[CALIB] {n_matched}/{len(KNOWN_RINGS_MM)} matchés  "
+        f"mm/px={mm_per_px_cal:.5f}  (nominal={mm_per_px_0:.5f}  "
+        f"D={abs(mm_per_px_cal - mm_per_px_0) / mm_per_px_0 * 100:.2f}%)"
+    )
 
     # ── Résultats complets ─────────────────────────────────────────────────────
     rings = []
     for r_mm in KNOWN_RINGS_MM:
         if r_mm in matches:
-            r_px    = matches[r_mm]
+            r_px = matches[r_mm]
             detected = True
         else:
-            r_px    = r_mm / mm_per_px_cal
+            r_px = r_mm / mm_per_px_cal
             detected = False
 
-        rings.append({
-            "radius_mm":  float(r_mm),
-            "radius_px":  round(float(r_px), 1),
-            "detected":   detected,
-        })
+        rings.append(
+            {
+                "radius_mm": float(r_mm),
+                "radius_px": round(float(r_px), 1),
+                "detected": detected,
+            }
+        )
         tag = "OK DETECTE" if detected else "   infere  "
         print(f"  {tag}  {r_mm:5.0f}mm -> {int(r_px):4d}px")
 
     # ── Ajustement d'ellipses ──────────────────────────────────────────────────
     # Seuils pour la détection des outliers.
-    THRESH_RATIO  = 0.05   # écart max toléré sur les ratios demi-axe / rayon (5 %)
-    THRESH_CENTER = 10.0   # écart max toléré sur la position du centre (px)
-    THRESH_ANGLE  = 20.0   # écart angulaire max toléré (deg, modulo 180)
+    THRESH_RATIO = 0.05  # écart max toléré sur les ratios demi-axe / rayon (5 %)
+    THRESH_CENTER = 10.0  # écart max toléré sur la position du centre (px)
+    THRESH_ANGLE = 20.0  # écart angulaire max toléré (deg, modulo 180)
     MIN_ECCEN_FOR_ANGLE = 0.03  # n'active le filtre d'angle que si |r0-r1| > 3 %
 
     # ── Passe 1 : ajustement brut ──────────────────────────────────────────────
@@ -476,7 +490,7 @@ def detect_rings(
         r_mm = ring["radius_mm"]
         if ring["detected"]:
             r_px = ring["radius_px"]
-            band = max(8, int(r_px * 0.06))   # ≈ 6 % du rayon, min 8 px
+            band = max(8, int(r_px * 0.06))  # ≈ 6 % du rayon, min 8 px
             ring_ellipses[r_mm] = fit_ring_ellipse(edges, cx, cy, r_px, band)
         else:
             ring_ellipses[r_mm] = None
@@ -492,7 +506,7 @@ def detect_rings(
             continue
         r_px = ring_lookup[r_mm]["radius_px"]
         (ecx_el, ecy_el), (ea, eb), eangle = el
-        fitted_params[r_mm] = (ea / (2*r_px), eb / (2*r_px), eangle, ecx_el, ecy_el)
+        fitted_params[r_mm] = (ea / (2 * r_px), eb / (2 * r_px), eangle, ecx_el, ecy_el)
 
     def _median_consensus(params: dict) -> tuple[float, float, float, float, float]:
         """Retourne (med_r0, med_r1, med_ang, med_ecx, med_ecy) ou des valeurs neutres."""
@@ -541,12 +555,14 @@ def detect_rings(
 
     n_fit = len(fitted_params)
     n_out = len(outlier_keys)
-    n_ok  = n_fit - n_out
+    n_ok = n_fit - n_out
     suffix = f"  [{n_out} outlier(s) remplaces]" if n_out else ""
-    print(f"[ELLI ] {n_ok}/{n_fit} ellipses valides"
-          f"  ratio=({avg_r0:.3f},{avg_r1:.3f})"
-          f"  angle={avg_angle:.1f}deg"
-          f"  centre=({avg_ecx:.1f},{avg_ecy:.1f}){suffix}")
+    print(
+        f"[ELLI ] {n_ok}/{n_fit} ellipses valides"
+        f"  ratio=({avg_r0:.3f},{avg_r1:.3f})"
+        f"  angle={avg_angle:.1f}deg"
+        f"  centre=({avg_ecx:.1f},{avg_ecy:.1f}){suffix}"
+    )
 
     # ── Synthèse des ellipses manquantes (inférées + outliers remplacés) ───────
     # Le statut distingue : "fitted" | "outlier" | "inferred"
@@ -581,15 +597,15 @@ def detect_rings(
 
     # ── Enrichissement JSON avec les paramètres d'ellipse ─────────────────────
     for ring in rings:
-        r_mm   = ring["radius_mm"]
-        el     = ring_ellipses[r_mm]
+        r_mm = ring["radius_mm"]
+        el = ring_ellipses[r_mm]
         status = ellipse_status.get(r_mm, "inferred")
         if el is not None:
             (ecx_el, ecy_el), (ea, eb), eangle = el
             ring["ellipse"] = {
-                "status":    status,
-                "cx":        round(float(ecx_el), 1),
-                "cy":        round(float(ecy_el), 1),
+                "status": status,
+                "cx": round(float(ecx_el), 1),
+                "cy": round(float(ecy_el), 1),
                 "axis_1_px": round(float(ea), 1),
                 "axis_2_px": round(float(eb), 1),
                 "angle_deg": round(float(eangle), 1),
@@ -602,26 +618,29 @@ def detect_rings(
     for _r_mm in INNER_RINGS_MM:
         _el = inner_ellipses[_r_mm]
         (_ecx, _ecy), (_ea, _eb), _eangle = _el
-        inner_rings_json.append({
-            "radius_mm":  float(_r_mm),
-            "radius_px":  round(_r_mm / mm_per_px_cal, 1),
-            "score":      INNER_RINGS_SCORE[_r_mm],
-            "ellipse": {
-                "status":    "inferred",
-                "cx":        round(float(_ecx), 1),
-                "cy":        round(float(_ecy), 1),
-                "axis_1_px": round(float(_ea), 1),
-                "axis_2_px": round(float(_eb), 1),
-                "angle_deg": round(float(_eangle), 1),
-            },
-        })
+        inner_rings_json.append(
+            {
+                "radius_mm": float(_r_mm),
+                "radius_px": round(_r_mm / mm_per_px_cal, 1),
+                "score": INNER_RINGS_SCORE[_r_mm],
+                "ellipse": {
+                    "status": "inferred",
+                    "cx": round(float(_ecx), 1),
+                    "cy": round(float(_ecy), 1),
+                    "axis_1_px": round(float(_ea), 1),
+                    "axis_2_px": round(float(_eb), 1),
+                    "angle_deg": round(float(_eangle), 1),
+                },
+            }
+        )
 
     result = {
-        "cx": cx, "cy": cy,
+        "cx": cx,
+        "cy": cy,
         "mm_per_px_nominal": mm_per_px_0,
         "mm_per_px_calibre": mm_per_px_cal,
         "n_detected": n_matched,
-        "n_total":    len(KNOWN_RINGS_MM),
+        "n_total": len(KNOWN_RINGS_MM),
         "rings": rings,
         "inner_rings": inner_rings_json,
     }
@@ -637,14 +656,14 @@ def detect_rings(
     annot = img.copy()
     thick = 2
 
-    COLOR_FITTED   = (0, 210,   0)   # vert (ajustement validé)
-    COLOR_INFERRED = (0, 150, 255)   # orange (inféré ou outlier remplacé)
+    COLOR_FITTED = (0, 210, 0)  # vert (ajustement validé)
+    COLOR_INFERRED = (0, 150, 255)  # orange (inféré ou outlier remplacé)
 
     for ring in rings:
-        r_px   = ring["radius_px"]
-        r_mm   = ring["radius_mm"]
+        r_px = ring["radius_px"]
+        r_mm = ring["radius_mm"]
         status = ellipse_status.get(r_mm, "inferred")
-        el     = ring_ellipses.get(r_mm)
+        el = ring_ellipses.get(r_mm)
 
         color = COLOR_INFERRED if status == "inferred" else COLOR_FITTED
 
@@ -652,7 +671,7 @@ def detect_rings(
             (ecx_el, ecy_el), (ea, eb), eangle = el
             ellipse_cv = (
                 (int(round(ecx_el)), int(round(ecy_el))),
-                (int(round(ea)),     int(round(eb))),
+                (int(round(ea)), int(round(eb))),
                 eangle,
             )
             if status == "fitted":
@@ -669,13 +688,21 @@ def detect_rings(
         lx = cx + int(r_px * np.cos(pi / 4)) + 4
         ly = cy - int(r_px * np.sin(pi / 4)) - 4
         if 0 < lx < w - 40 and 4 < ly < h:
-            cv2.putText(annot, f"{int(r_mm)}mm", (lx, ly),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 1, cv2.LINE_AA)
+            cv2.putText(
+                annot,
+                f"{int(r_mm)}mm",
+                (lx, ly),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.42,
+                color,
+                1,
+                cv2.LINE_AA,
+            )
 
     # ── Anneaux intérieurs (zones 7–10) ──────────────────────────────────────
-    COLOR_INNER = (220, 220, 220)   # blanc cassé, visible sur le disque noir
+    COLOR_INNER = (220, 220, 220)  # blanc cassé, visible sur le disque noir
     for _r_mm in INNER_RINGS_MM:
-        _el   = inner_ellipses[_r_mm]
+        _el = inner_ellipses[_r_mm]
         _r_px = _r_mm / mm_per_px_cal
         _draw_dashed_ellipse(annot, _el, COLOR_INNER, thickness=1, n_dashes=48)
         # Étiquette : score + mm (à 45° vers le haut-droit)
@@ -683,22 +710,42 @@ def detect_rings(
         _lx = cx + int(_r_px * np.cos(pi / 4)) + 4
         _ly = cy - int(_r_px * np.sin(pi / 4)) - 4
         if 0 < _lx < w - 50 and 4 < _ly < h:
-            cv2.putText(annot, f"{_score}  ({int(_r_mm)}mm)", (_lx, _ly),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, COLOR_INNER, 1, cv2.LINE_AA)
+            cv2.putText(
+                annot,
+                f"{_score}  ({int(_r_mm)}mm)",
+                (_lx, _ly),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.38,
+                COLOR_INNER,
+                1,
+                cv2.LINE_AA,
+            )
 
     # Centre
     cv2.drawMarker(annot, (cx, cy), (255, 0, 0), cv2.MARKER_CROSS, 40, 2)
 
     # Légende
     lh = h - 1
-    cv2.putText(annot, f"Detecte : {n_matched}/{len(KNOWN_RINGS_MM)}  "
-                f"mm/px={mm_per_px_cal:.4f}  outliers={n_out}",
-                (10, lh - 28), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
-                (200, 200, 200), 1, cv2.LINE_AA)
-    cv2.putText(annot,
-                "Vert plein=ajuste  Vert pointille=outlier->synthese  Orange=infere",
-                (10, lh - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
-                (200, 200, 200), 1, cv2.LINE_AA)
+    cv2.putText(
+        annot,
+        f"Detecte : {n_matched}/{len(KNOWN_RINGS_MM)}  mm/px={mm_per_px_cal:.4f}  outliers={n_out}",
+        (10, lh - 28),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.48,
+        (200, 200, 200),
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        annot,
+        "Vert plein=ajuste  Vert pointille=outlier->synthese  Orange=infere",
+        (10, lh - 8),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.48,
+        (200, 200, 200),
+        1,
+        cv2.LINE_AA,
+    )
 
     annot_path = out_dir / f"{stem}_rings.jpg"
     cv2.imwrite(str(annot_path), annot, [cv2.IMWRITE_JPEG_QUALITY, 92])
@@ -707,8 +754,13 @@ def detect_rings(
 
     if debug:
         _save_profile_image(
-            profile, peaks_rel, r_min_px, mm_per_px_cal, matches,
-            out_dir / f"{stem}_radial_profile.jpg")
+            profile,
+            peaks_rel,
+            r_min_px,
+            mm_per_px_cal,
+            matches,
+            out_dir / f"{stem}_radial_profile.jpg",
+        )
 
     if show:
         _open_file(annot_path)
@@ -718,6 +770,7 @@ def detect_rings(
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
+
 def _collect_flat_images(path_str: str) -> list[Path]:
     """Collecte les images *_flat.jpg dans un fichier ou un dossier."""
     p = Path(path_str)
@@ -725,16 +778,14 @@ def _collect_flat_images(path_str: str) -> list[Path]:
         return [p]
     if p.is_dir():
         results = sorted(
-            f for f in p.rglob("*_flat.*")
+            f
+            for f in p.rglob("*_flat.*")
             if f.suffix.lower() in IMAGE_EXTENSIONS
-            and not f.stem.startswith("_")   # exclure _summary_flat etc.
+            and not f.stem.startswith("_")  # exclure _summary_flat etc.
         )
         if not results:
             # Fallback : toutes les images du dossier
-            results = sorted(
-                f for f in p.glob("*.*")
-                if f.suffix.lower() in IMAGE_EXTENSIONS
-            )
+            results = sorted(f for f in p.glob("*.*") if f.suffix.lower() in IMAGE_EXTENSIONS)
         return results
     print(f"[ERREUR] Chemin introuvable : {path_str}")
     sys.exit(1)
@@ -749,12 +800,12 @@ def make_summary(annot_paths: list[Path | None], out_dir: Path) -> Path:
 
     Retourne le Path du fichier résumé généré.
     """
-    COLS   = 4
+    COLS = 4
     CARD_W = 280
     CARD_H = 300
 
     total = len(annot_paths)
-    rows  = (total + COLS - 1) // COLS
+    rows = (total + COLS - 1) // COLS
     canvas = np.full((rows * CARD_H, COLS * CARD_W, 3), 25, dtype=np.uint8)
 
     for idx, path in enumerate(annot_paths):
@@ -771,22 +822,27 @@ def make_summary(annot_paths: list[Path | None], out_dir: Path) -> Path:
             if img_th is not None:
                 th_h = CARD_H - 44
                 scale = th_h / img_th.shape[0]
-                th_w  = max(1, int(img_th.shape[1] * scale))
+                th_w = max(1, int(img_th.shape[1] * scale))
                 thumb = cv2.resize(img_th, (th_w, th_h), interpolation=cv2.INTER_AREA)
                 tx = x0 + (CARD_W - th_w) // 2
                 ty = y0 + 4
                 if tx >= 0 and tx + th_w <= canvas.shape[1]:
-                    canvas[ty:ty + th_h, tx:tx + th_w] = thumb
+                    canvas[ty : ty + th_h, tx : tx + th_w] = thumb
 
-        cv2.rectangle(canvas, (x0 + 1, y0 + 1),
-                      (x0 + CARD_W - 2, y0 + CARD_H - 2), border, 3)
+        cv2.rectangle(canvas, (x0 + 1, y0 + 1), (x0 + CARD_W - 2, y0 + CARD_H - 2), border, 3)
 
         stem = Path(path).stem if path is not None else "(missing)"
         label = (stem[-20:] + "  OK") if ok else (stem[-20:] + "  ECHEC")
-        cv2.putText(canvas, label,
-                    (x0 + 6, y0 + CARD_H - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.38,
-                    (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(
+            canvas,
+            label,
+            (x0 + 6, y0 + CARD_H - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.38,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
 
     out_path = out_dir / "_summary_rings.jpg"
     cv2.imwrite(str(out_path), canvas, [cv2.IMWRITE_JPEG_QUALITY, 88])
@@ -796,15 +852,18 @@ def make_summary(annot_paths: list[Path | None], out_dir: Path) -> Path:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(
-        description="Détecte les anneaux concentriques sur une image mise à plat.")
-    ap.add_argument("image",
-                    help="Image *_flat.jpg ou dossier contenant des *_flat.jpg")
-    ap.add_argument("--out",   default=None,
-                    help="Dossier de sortie (défaut : même dossier que l'image flat)")
-    ap.add_argument("--debug", action="store_true",
-                    help="Sauvegarde les images intermédiaires (edges, profil radial)")
-    ap.add_argument("--show",  action="store_true",
-                    help="Ouvre l'image annotée finale")
+        description="Détecte les anneaux concentriques sur une image mise à plat."
+    )
+    ap.add_argument("image", help="Image *_flat.jpg ou dossier contenant des *_flat.jpg")
+    ap.add_argument(
+        "--out", default=None, help="Dossier de sortie (défaut : même dossier que l'image flat)"
+    )
+    ap.add_argument(
+        "--debug",
+        action="store_true",
+        help="Sauvegarde les images intermédiaires (edges, profil radial)",
+    )
+    ap.add_argument("--show", action="store_true", help="Ouvre l'image annotée finale")
     args = ap.parse_args()
 
     images = _collect_flat_images(args.image)
@@ -812,8 +871,7 @@ if __name__ == "__main__":
 
     rings_paths = []
     for img_path in images:
-        result = detect_rings(img_path, output_dir=args.out,
-                              debug=args.debug, show=args.show)
+        result = detect_rings(img_path, output_dir=args.out, debug=args.debug, show=args.show)
         rings_paths.append(result)
 
     # Génère la planche de contact si plusieurs images

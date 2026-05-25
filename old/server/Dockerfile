@@ -46,7 +46,7 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 # Vérification de santé : appel à /health toutes les 30 s
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python -c \
         "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" \
         || exit 1

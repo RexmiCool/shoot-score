@@ -2,6 +2,7 @@
 Utilitaires partagés pour l'analyse de cibles de tir.
 Importé par find_black_disk.py, crop_only.py et diff_impacts.py.
 """
+
 import cv2
 import numpy as np
 import os
@@ -10,15 +11,16 @@ import subprocess
 from pathlib import Path
 
 # ── Constantes géométriques de la cible ───────────────────────────────────────
-BLACK_DISK_RADIUS_MM   = 100.0   # rayon du disque noir central (mm)
-OUTER_CIRCLE_RADIUS_MM = 250.0   # rayon du cercle extérieur (mm)
-N_INTERMEDIATE         = 5       # nombre d'anneaux entre disque noir et cercle ext.
-BULLET_DIAM_MM         = 9.0     # diamètre du projectile (mm)
+BLACK_DISK_RADIUS_MM = 100.0  # rayon du disque noir central (mm)
+OUTER_CIRCLE_RADIUS_MM = 250.0  # rayon du cercle extérieur (mm)
+N_INTERMEDIATE = 5  # nombre d'anneaux entre disque noir et cercle ext.
+BULLET_DIAM_MM = 9.0  # diamètre du projectile (mm)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
 
 
 # ── Utilitaires généraux ──────────────────────────────────────────────────────
+
 
 def open_file(path: Path) -> None:
     """Ouvre un fichier avec l'application par défaut du système."""
@@ -46,6 +48,7 @@ def collect_images(path_str: str) -> list[Path]:
 
 # ── Détection du disque noir ──────────────────────────────────────────────────
 
+
 def find_black_disk_in_image(img: np.ndarray):
     """
     Détecte le disque noir central dans une image BGR.
@@ -65,16 +68,16 @@ def find_black_disk_in_image(img: np.ndarray):
     _, mask = cv2.threshold(blur, thresh, 255, cv2.THRESH_BINARY_INV)
 
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel, iterations=2)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
 
     cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not cnts:
         return None
 
-    min_area       = 0.005 * h * w
+    min_area = 0.005 * h * w
     cx_img, cy_img = w / 2, h / 2
-    tol_x, tol_y   = w * 0.25, h * 0.25
+    tol_x, tol_y = w * 0.25, h * 0.25
 
     candidates = []
     for cnt in cnts:
@@ -82,7 +85,7 @@ def find_black_disk_in_image(img: np.ndarray):
         if area < min_area:
             continue
         peri = cv2.arcLength(cnt, True)
-        circ = 4 * np.pi * area / (peri ** 2) if peri > 0 else 0
+        circ = 4 * np.pi * area / (peri**2) if peri > 0 else 0
         if circ < 0.5:
             continue
         (cx, cy), r = cv2.minEnclosingCircle(cnt)
@@ -99,6 +102,7 @@ def find_black_disk_in_image(img: np.ndarray):
 
 
 # ── Crop de la cible ──────────────────────────────────────────────────────────
+
 
 def crop_target(
     img_orig: np.ndarray,
@@ -118,10 +122,10 @@ def crop_target(
         return None
 
     cx, cy, r_disk, mm_per_px = result
-    r_outer   = int(OUTER_CIRCLE_RADIUS_MM / mm_per_px)
+    r_outer = int(OUTER_CIRCLE_RADIUS_MM / mm_per_px)
     margin_px = int(margin_mm / mm_per_px)
-    half      = r_outer + margin_px
-    h0, w0    = img_orig.shape[:2]
+    half = r_outer + margin_px
+    h0, w0 = img_orig.shape[:2]
 
     x1 = max(0, cx - half)
     y1 = max(0, cy - half)
@@ -129,7 +133,7 @@ def crop_target(
     y2 = min(h0, cy + half)
 
     img_crop = img_orig[y1:y2, x1:x2].copy()
-    side     = min(img_crop.shape[:2])
+    side = min(img_crop.shape[:2])
     img_crop = img_crop[:side, :side]
 
     if remove_bottom_mm > 0:

@@ -31,7 +31,7 @@ def crop_to_target(
     blur = cv2.GaussianBlur(gray, (21, 21), 0)
 
     # Seuil adaptatif selon luminosité du fond (bord haut de l'image)
-    bg_lum = float(np.median(blur[:min(100, h//10), :]))
+    bg_lum = float(np.median(blur[: min(100, h // 10), :]))
     threshold = max(bg_lum + 30, 80)
     _, mask = cv2.threshold(blur, threshold, 255, cv2.THRESH_BINARY)
 
@@ -39,7 +39,7 @@ def crop_to_target(
     k_size = max(3, int(min(h, w) * 0.03) | 1)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=6)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel, iterations=2)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
 
     if debug:
         cv2.imwrite(str(out_dir / (Path(image_path).stem + "_dbg_mask.jpg")), mask)
@@ -62,29 +62,35 @@ def crop_to_target(
         approx = cv2.approxPolyDP(sheet_cnt, eps * peri, True)
         if len(approx) == 4:
             quad = approx
-            print(f"[CROP] Quadrilatère trouvé (eps={eps}) : {approx.reshape(4,2).tolist()}")
+            print(f"[CROP] Quadrilatère trouvé (eps={eps}) : {approx.reshape(4, 2).tolist()}")
             break
 
     ordered = None
     if quad is not None:
         # ── 3) Correction de perspective ───────────────────────────────────────
         pts = quad.reshape(4, 2).astype(np.float32)
-        s = pts.sum(axis=1); d = np.diff(pts, axis=1)
-        ordered = np.array([
-            pts[np.argmin(s)],   # haut-gauche
-            pts[np.argmin(d)],   # haut-droit
-            pts[np.argmax(s)],   # bas-droit
-            pts[np.argmax(d)],   # bas-gauche
-        ], dtype=np.float32)
-        side = 1040
-        dst = np.array([[0,0],[side-1,0],[side-1,side-1],[0,side-1]], dtype=np.float32)
+        s = pts.sum(axis=1)
+        d = np.diff(pts, axis=1)
+        ordered = np.array(
+            [
+                pts[np.argmin(s)],  # haut-gauche
+                pts[np.argmin(d)],  # haut-droit
+                pts[np.argmax(s)],  # bas-droit
+                pts[np.argmax(d)],  # bas-gauche
+            ],
+            dtype=np.float32,
+        )
+        side = 1056
+        dst = np.array(
+            [[0, 0], [side - 1, 0], [side - 1, side - 1], [0, side - 1]], dtype=np.float32
+        )
         M = cv2.getPerspectiveTransform(ordered, dst)
         cropped = cv2.warpPerspective(img, M, (side, side))
     else:
         print("[CROP] Quadrilatère non trouvé, utilisation du bounding rect.")
         x, y, bw, bh = cv2.boundingRect(sheet_cnt)
-        cropped = img[y:y+bh, x:x+bw]
-        cropped = cv2.resize(cropped, (1040, 1040))
+        cropped = img[y : y + bh, x : x + bw]
+        cropped = cv2.resize(cropped, (1056, 1056))
 
     if debug:
         dbg = img.copy()

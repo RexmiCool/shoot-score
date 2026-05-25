@@ -37,9 +37,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from flatten_target import MM_PER_PX_OUT
 
 # ── Paramètres ────────────────────────────────────────────────────────────────
-BBOX_SIZE_MM = 18.0   # taille de la bbox autour de chaque impact (mm)
-                      # 18mm = 2× le calibre 9mm → halo de compression inclus
-SEED         = 42
+BBOX_SIZE_MM = 18.0  # taille de la bbox autour de chaque impact (mm)
+# 18mm = 2× le calibre 9mm → halo de compression inclus
+SEED = 42
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
 
 
@@ -49,8 +49,20 @@ def prepare_dataset(
     val_ratio: float = 0.20,
 ) -> Path:
     """
-    Lit tous les *_labels.json sous `labels_root` et génère le dataset YOLO.
-    Retourne le Path du dataset.yaml généré.
+    Build a YOLO dataset from ``*_labels.json`` files.
+
+    Args:
+        labels_root: Root directory containing ``*_labels.json`` files and
+            corresponding flattened images.
+        out_dir: Output directory where YOLO ``images/``, ``labels/`` and
+            ``dataset.yaml`` are written.
+        val_ratio: Fraction of samples reserved for the validation split.
+
+    Returns:
+        Path to the generated ``dataset.yaml`` file.
+
+    Raises:
+        SystemExit: If no valid labels or images are found.
     """
     label_files = sorted(labels_root.rglob("*_labels.json"))
     if not label_files:
@@ -62,7 +74,7 @@ def prepare_dataset(
     samples = []
     n_impacts_total = 0
     for lp in label_files:
-        stem      = lp.stem.removesuffix("_labels")
+        stem = lp.stem.removesuffix("_labels")
         flat_path = lp.parent / f"{stem}_flat.jpg"
         if not flat_path.exists():
             for ext in IMAGE_EXTENSIONS:
@@ -80,19 +92,20 @@ def prepare_dataset(
 
         # mm/px depuis rings.json, fallback nominal
         rings_path = lp.parent / f"{stem}_rings.json"
-        mm_per_px  = MM_PER_PX_OUT
+        mm_per_px = MM_PER_PX_OUT
         if rings_path.exists():
             with open(rings_path, encoding="utf-8") as f:
                 mm_per_px = float(json.load(f)["mm_per_px_calibre"])
 
-        samples.append({
-            "flat_path": flat_path,
-            "impacts":   impacts,
-            "mm_per_px": mm_per_px,
-        })
+        samples.append(
+            {
+                "flat_path": flat_path,
+                "impacts": impacts,
+                "mm_per_px": mm_per_px,
+            }
+        )
         n_impacts_total += len(impacts)
-        print(f"  {flat_path.name:40s}  {len(impacts):3d} impact(s)  "
-              f"mm/px={mm_per_px:.5f}")
+        print(f"  {flat_path.name:40s}  {len(impacts):3d} impact(s)  mm/px={mm_per_px:.5f}")
 
     if not samples:
         print("[ERREUR] Aucun échantillon valide.")
@@ -104,9 +117,9 @@ def prepare_dataset(
     random.seed(SEED)
     shuffled = samples[:]
     random.shuffle(shuffled)
-    n_val   = max(1, int(len(shuffled) * val_ratio))
+    n_val = max(1, int(len(shuffled) * val_ratio))
     n_train = len(shuffled) - n_val
-    splits  = {"train": shuffled[:n_train], "val": shuffled[n_train:]}
+    splits = {"train": shuffled[:n_train], "val": shuffled[n_train:]}
     print(f"[SPLIT] train={n_train}  val={n_val}")
 
     # ── Création des dossiers ─────────────────────────────────────────────────
@@ -134,19 +147,36 @@ def prepare_dataset(
 
             # Taille bbox normalisée
             bbox_px = BBOX_SIZE_MM / mm_per_px
-            w_norm  = bbox_px / w
-            h_norm  = bbox_px / h
+            w_norm = bbox_px / w
+            h_norm = bbox_px / h
 
             # Lignes YOLO : "0 cx cy bw bh" (tout normalisé)
             lines = []
             for imp in s["impacts"]:
-                cx_norm = imp["cx_px"] / w
-                cy_norm = imp["cy_px"] / h
-                # Clamp pour rester dans l'image
-                cx_norm = max(w_norm / 2, min(1.0 - w_norm / 2, cx_norm))
-                cy_norm = max(h_norm / 2, min(1.0 - h_norm / 2, cy_norm))
+                cx_px = float(imp["cx_px"])
+                cy_px = float(imp["cy_px"])
+
+                # Important pour les impacts en bord: on conserve le centre
+                # annoté et on clippe la bbox aux limites de l'image.
+                half_bbox = bbox_px * 0.5
+                x1 = max(0.0, cx_px - half_bbox)
+                y1 = max(0.0, cy_px - half_bbox)
+                x2 = min(float(w), cx_px + half_bbox)
+                y2 = min(float(h), cy_px + half_bbox)
+
+                bw_px = x2 - x1
+                bh_px = y2 - y1
+                if bw_px <= 1.0 or bh_px <= 1.0:
+                    continue
+
+                cx_norm = ((x1 + x2) * 0.5) / w
+                cy_norm = ((y1 + y2) * 0.5) / h
+                bw_norm = bw_px / w
+                bh_norm = bh_px / h
+
                 lines.append(
-                    f"0 {cx_norm:.6f} {cy_norm:.6f} {w_norm:.6f} {h_norm:.6f}")
+                    f"0 {cx_norm:.6f} {cy_norm:.6f} {bw_norm:.6f} {bh_norm:.6f}"
+                )
 
             label_name = flat_path.stem + ".txt"
             with open(out_dir / "labels" / split / label_name, "w") as f:
@@ -177,14 +207,17 @@ def prepare_dataset(
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(
-        description="Convertit les *_labels.json en dataset YOLO.")
-    ap.add_argument("root",
-                    help="Dossier contenant les *_labels.json (ex: outputs/flatten)")
-    ap.add_argument("--out",       default="data/yolo",
-                    help="Dossier de sortie du dataset (défaut: data/yolo)")
-    ap.add_argument("--val-ratio", type=float, default=0.20,
-                    help="Fraction des images en validation (défaut: 0.20)")
+    ap = argparse.ArgumentParser(description="Convertit les *_labels.json en dataset YOLO.")
+    ap.add_argument("root", help="Dossier contenant les *_labels.json (ex: outputs/flatten)")
+    ap.add_argument(
+        "--out", default="data/yolo", help="Dossier de sortie du dataset (défaut: data/yolo)"
+    )
+    ap.add_argument(
+        "--val-ratio",
+        type=float,
+        default=0.20,
+        help="Fraction des images en validation (défaut: 0.20)",
+    )
     args = ap.parse_args()
 
     prepare_dataset(Path(args.root), Path(args.out), args.val_ratio)

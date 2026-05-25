@@ -3,11 +3,20 @@
 Outil de détection automatique des impacts de balles sur des cibles de tir,
 depuis une simple photo prise sur le stand.
 
+## Memo Operationnel
+
+Pour une vue complete du fonctionnement global + les commandes (avec quand les utiliser), voir :
+
+- `MEMO_COMMANDES.md`
+
+> Note: les fichiers de l'ancienne architecture (serveur + scripts legacy)
+> ont ete archives dans `old/` pour garder une racine de projet plus propre.
+
 ```
 Photo brute (téléphone)
         │
         ▼
-  flatten_target   ──►  image recadrée 1040×1040 px, perspective corrigée
+  flatten_target   ──►  image recadrée 1056×1056 px, perspective corrigée
         │
         ▼
   detect_rings     ──►  anneaux calibrés + étalonnage mm/px
@@ -146,7 +155,7 @@ Ces scripts sont appelés automatiquement par `pipeline.py`, mais peuvent aussi
 
 Détecte le disque noir central (Ø200mm), fitte une ellipse sur son contour
 et calcule la transformation affine pour corriger la perspective. Produit une
-image carrée 1040×1040 px centrée sur la cible.
+image carrée 1056×1056 px centrée sur la cible.
 
 ```powershell
 python src/flatten_target.py data/raw/ma_photo.jpg --show
@@ -249,7 +258,7 @@ Poids produits : `runs/detect/models/yolo_impacts/weights/best.pt`
 | `--model` | `yolov8n.pt` | Modèle de départ |
 | `--epochs` | `200` | Nombre d'epochs |
 | `--batch` | `8` | Taille de batch (réduire si OOM) |
-| `--imgsz` | `640` | Résolution d'entraînement |
+| `--imgsz` | `1056` | Résolution d'entraînement |
 | `--device` | auto | `0` = GPU, `cpu` = CPU |
 
 ---
@@ -622,4 +631,4 @@ La cible utilisée est une cible standard type pistolet 25m.
 | Zone 2 | 200 – 225 mm | 2 |
 | Zone 1 | 225 – 250 mm | 1 |
 
-Image de sortie : **1040 × 1040 px**, ≈ **0.523 mm/px**, disque noir ≈ 191 px de rayon.
+Image de sortie : **1056 × 1056 px**, ≈ **0.523 mm/px**, disque noir ≈ 191 px de rayon.

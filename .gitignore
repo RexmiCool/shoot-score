@@ -16,3 +16,5 @@ mobile/.expo/
 runs/
 outputs/
 data/
+# Ignore local deployment archives
+old/server/*.tar

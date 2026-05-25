@@ -31,18 +31,19 @@ import cv2
 import numpy as np
 
 # ── Constantes géométriques de la cible ───────────────────────────────────────
-BLACK_DISK_RADIUS_MM   = 100.0   # rayon du disque noir central (mm)
-OUTER_CIRCLE_RADIUS_MM = 250.0   # rayon du cercle extérieur (mm)
+BLACK_DISK_RADIUS_MM = 100.0  # rayon du disque noir central (mm)
+OUTER_CIRCLE_RADIUS_MM = 250.0  # rayon du cercle extérieur (mm)
 
 # Paramètres de l'image de sortie
-OUTPUT_SIZE            = 1200    # côté de l'image de sortie (px)
-OUTPUT_CENTER          = OUTPUT_SIZE // 2
-OUTPUT_OUTER_RADIUS    = int(OUTPUT_SIZE * 0.46)   # rayon cible dans l'image de sortie
+OUTPUT_SIZE = 1200  # côté de l'image de sortie (px)
+OUTPUT_CENTER = OUTPUT_SIZE // 2
+OUTPUT_OUTER_RADIUS = int(OUTPUT_SIZE * 0.46)  # rayon cible dans l'image de sortie
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
 
 
 # ── Utilitaires système ────────────────────────────────────────────────────────
+
 
 def _open_file(path: Path) -> None:
     if sys.platform == "win32":
@@ -64,6 +65,7 @@ def _collect_images(path_str: str) -> list[Path]:
 
 
 # ── Étape 1 : Détection du disque noir ────────────────────────────────────────
+
 
 def detect_black_disk(
     img: np.ndarray,
@@ -96,15 +98,15 @@ def detect_black_disk(
 
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
 
-    min_area = 0.002 * h * w   # le disque fait au moins 0.2% de l'image
-    max_area = 0.35  * h * w   # pas plus de 35%
+    min_area = 0.002 * h * w  # le disque fait au moins 0.2% de l'image
+    max_area = 0.35 * h * w  # pas plus de 35%
 
     def _search(tol_x: float, tol_y: float, ref_cx: float, ref_cy: float):
         """Recherche le meilleur candidat dans la tolérance donnée autour de (ref_cx, ref_cy)."""
         best = None
         for thresh in [40, 55, 70, 85, 100]:
             _, mask = cv2.threshold(blur, thresh, 255, cv2.THRESH_BINARY_INV)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel, iterations=2)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=4)
 
             cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -114,7 +116,7 @@ def detect_black_disk(
                 if not (min_area <= area <= max_area):
                     continue
                 peri = cv2.arcLength(cnt, True)
-                circ = 4 * pi * area / peri ** 2 if peri > 0 else 0
+                circ = 4 * pi * area / peri**2 if peri > 0 else 0
                 if circ < 0.60:
                     continue
                 bx, by, bw, bh = cv2.boundingRect(cnt)
@@ -160,18 +162,30 @@ def detect_black_disk(
     # Garde : si r_outer attendu dépasse la taille de l'image, la détection est fausse
     r_outer_expected = OUTER_CIRCLE_RADIUS_MM / mm_per_px
     if r_outer_expected > min(h, w) * 0.95:
-        print(f"[DISQUE] Fausse détection (r_outer={r_outer_expected:.0f}px > image {min(h,w)}px).")
+        print(
+            f"[DISQUE] Fausse détection (r_outer={r_outer_expected:.0f}px > image {min(h, w)}px)."
+        )
         return None
 
-    print(f"[DISQUE] centre=({int(cx)},{int(cy)})  r={int(r)}px  "
-          f"mm/px={mm_per_px:.4f}  diam≈{int(r*2*mm_per_px)}mm  (seuil={thresh_used})")
+    print(
+        f"[DISQUE] centre=({int(cx)},{int(cy)})  r={int(r)}px  "
+        f"mm/px={mm_per_px:.4f}  diam≈{int(r * 2 * mm_per_px)}mm  (seuil={thresh_used})"
+    )
     return int(cx), int(cy), int(r), mm_per_px
 
 
 # ── Étape 2a : Mise à plat par fit d'ellipse ──────────────────────────────────
 
-def _fit_outer_ellipse(img: np.ndarray, cx: int, cy: int, r_disk: int,
-                       mm_per_px: float, debug_dir: Path | None = None, stem: str = ""):
+
+def _fit_outer_ellipse(
+    img: np.ndarray,
+    cx: int,
+    cy: int,
+    r_disk: int,
+    mm_per_px: float,
+    debug_dir: Path | None = None,
+    stem: str = "",
+):
     """
     Tente de fitter une ellipse sur l'anneau extérieur de la cible (Ø500mm).
 
@@ -193,7 +207,7 @@ def _fit_outer_ellipse(img: np.ndarray, cx: int, cy: int, r_disk: int,
     blur = cv2.GaussianBlur(gray, (7, 7), 0)
 
     # Lancer N rayons depuis le centre, collecter le point de bord de chacun
-    N_RAYS = 72   # tous les 5°
+    N_RAYS = 72  # tous les 5°
     border_pts = []
 
     for i in range(N_RAYS):
@@ -231,8 +245,10 @@ def _fit_outer_ellipse(img: np.ndarray, cx: int, cy: int, r_disk: int,
     (ex, ey), (ma, Mi), angle = ellipse
     ecc = 1 - min(ma, Mi) / max(ma, Mi) if max(ma, Mi) > 0 else 0
 
-    print(f"[ELLIPSE] centre=({ex:.1f},{ey:.1f})  axes=({ma:.1f},{Mi:.1f})  "
-          f"angle={angle:.1f}°  excentricité={ecc:.3f}  ({len(border_pts)} pts)")
+    print(
+        f"[ELLIPSE] centre=({ex:.1f},{ey:.1f})  axes=({ma:.1f},{Mi:.1f})  "
+        f"angle={angle:.1f}°  excentricité={ecc:.3f}  ({len(border_pts)} pts)"
+    )
     return ellipse
 
 
@@ -250,14 +266,13 @@ def _homography_from_ellipse(ellipse, output_size: int, output_outer_radius: int
       - On en déduit la transformation affine qui la ramène au cercle.
     """
     (ex, ey), (ma, Mi), angle = ellipse
-    a = max(ma, Mi) / 2.0   # demi grand axe (px)
-    b = min(ma, Mi) / 2.0   # demi petit axe (px)
+    a = max(ma, Mi) / 2.0  # demi grand axe (px)
+    b = min(ma, Mi) / 2.0  # demi petit axe (px)
     theta = np.deg2rad(angle)
 
     # Matrice de rotation de l'ellipse
     cos_t, sin_t = np.cos(theta), np.sin(theta)
-    R = np.array([[cos_t, -sin_t],
-                  [sin_t,  cos_t]])
+    R = np.array([[cos_t, -sin_t], [sin_t, cos_t]])
 
     # Transformation qui ramène l'ellipse au cercle unité :
     # T_circle = R^T · diag(1/a, 1/b) · R
@@ -281,13 +296,15 @@ def _homography_from_ellipse(ellipse, output_size: int, output_outer_radius: int
     M_affine[0, 2] = tx
     M_affine[1, 2] = ty
 
-    return M_affine[:2]   # retourne la matrice affine 2×3 pour warpAffine
+    return M_affine[:2]  # retourne la matrice affine 2×3 pour warpAffine
 
 
 # ── Étape 2b : Mise à plat par ArUco ──────────────────────────────────────────
 
-def _homography_from_aruco(img: np.ndarray, aruco_length_mm: float = 40.0,
-                           debug_dir: Path | None = None, stem: str = ""):
+
+def _homography_from_aruco(
+    img: np.ndarray, aruco_length_mm: float = 40.0, debug_dir: Path | None = None, stem: str = ""
+):
     """
     Détecte 4 marqueurs ArUco (DICT_4X4_50) supposés placés aux 4 coins
     du carton de la cible et calcule l'homographie pour la mise à plat.
@@ -304,7 +321,7 @@ def _homography_from_aruco(img: np.ndarray, aruco_length_mm: float = 40.0,
         return None
 
     aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-    detector   = cv2.aruco.ArucoDetector(aruco_dict, cv2.aruco.DetectorParameters())
+    detector = cv2.aruco.ArucoDetector(aruco_dict, cv2.aruco.DetectorParameters())
     corners, ids, _ = detector.detectMarkers(img)
 
     if ids is None or len(ids) < 4:
@@ -316,7 +333,7 @@ def _homography_from_aruco(img: np.ndarray, aruco_length_mm: float = 40.0,
     id_to_corner = {}
     for i, mid in enumerate(ids.flatten()):
         if mid in (0, 1, 2, 3):
-            c = corners[i][0]   # 4 coins du marqueur (sens horaire depuis haut-gauche)
+            c = corners[i][0]  # 4 coins du marqueur (sens horaire depuis haut-gauche)
             id_to_corner[mid] = c
 
     if len(id_to_corner) < 4:
@@ -324,20 +341,26 @@ def _homography_from_aruco(img: np.ndarray, aruco_length_mm: float = 40.0,
         return None
 
     # Coin intérieur de chaque marqueur (le plus proche du centre de la cible)
-    src_pts = np.array([
-        id_to_corner[0][2],   # HG : coin bas-droit du marqueur 0
-        id_to_corner[1][3],   # HD : coin bas-gauche du marqueur 1
-        id_to_corner[2][0],   # BD : coin haut-gauche du marqueur 2
-        id_to_corner[3][1],   # BG : coin haut-droit du marqueur 3
-    ], dtype=np.float32)
+    src_pts = np.array(
+        [
+            id_to_corner[0][2],  # HG : coin bas-droit du marqueur 0
+            id_to_corner[1][3],  # HD : coin bas-gauche du marqueur 1
+            id_to_corner[2][0],  # BD : coin haut-gauche du marqueur 2
+            id_to_corner[3][1],  # BG : coin haut-droit du marqueur 3
+        ],
+        dtype=np.float32,
+    )
 
     side_px = float(OUTPUT_SIZE)
-    dst_pts = np.array([
-        [0,       0      ],
-        [side_px, 0      ],
-        [side_px, side_px],
-        [0,       side_px],
-    ], dtype=np.float32)
+    dst_pts = np.array(
+        [
+            [0, 0],
+            [side_px, 0],
+            [side_px, side_px],
+            [0, side_px],
+        ],
+        dtype=np.float32,
+    )
 
     H, _ = cv2.findHomography(src_pts, dst_pts)
 
@@ -351,6 +374,7 @@ def _homography_from_aruco(img: np.ndarray, aruco_length_mm: float = 40.0,
 
 
 # ── Pipeline principale ────────────────────────────────────────────────────────
+
 
 def localize_and_flatten(
     image_path,
@@ -369,7 +393,7 @@ def localize_and_flatten(
     Sauvegarde l'image mise à plat dans output_dir/<stem>/<stem>_flat.jpg.
     Retourne le chemin de l'image résultante, ou None en cas d'échec.
     """
-    stem    = Path(image_path).stem
+    stem = Path(image_path).stem
     out_dir = Path(output_dir) / stem
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -405,7 +429,9 @@ def localize_and_flatten(
     H_aruco = _homography_from_aruco(img, debug_dir=out_dir if debug else None, stem=stem)
     if H_aruco is not None:
         flat = cv2.warpPerspective(
-            img, H_aruco, (OUTPUT_SIZE, OUTPUT_SIZE),
+            img,
+            H_aruco,
+            (OUTPUT_SIZE, OUTPUT_SIZE),
             flags=cv2.INTER_LINEAR,
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=(200, 200, 200),
@@ -415,13 +441,20 @@ def localize_and_flatten(
     # 2b — Ellipse
     if flat is None:
         ellipse = _fit_outer_ellipse(
-            img, cx, cy, r_disk, mm_per_px,
-            debug_dir=out_dir if debug else None, stem=stem,
+            img,
+            cx,
+            cy,
+            r_disk,
+            mm_per_px,
+            debug_dir=out_dir if debug else None,
+            stem=stem,
         )
         if ellipse is not None:
             M_affine = _homography_from_ellipse(ellipse, OUTPUT_SIZE, OUTPUT_OUTER_RADIUS)
             flat = cv2.warpAffine(
-                img, M_affine, (OUTPUT_SIZE, OUTPUT_SIZE),
+                img,
+                M_affine,
+                (OUTPUT_SIZE, OUTPUT_SIZE),
                 flags=cv2.INTER_LINEAR,
                 borderMode=cv2.BORDER_CONSTANT,
                 borderValue=(200, 200, 200),
@@ -432,8 +465,8 @@ def localize_and_flatten(
     if flat is None:
         print("[WARN] Fallback : pas de correction de perspective, simple recadrage.")
         r_outer = int(OUTER_CIRCLE_RADIUS_MM / mm_per_px)
-        margin  = int(r_outer * 0.10)
-        half    = r_outer + margin
+        margin = int(r_outer * 0.10)
+        half = r_outer + margin
         x1 = max(0, cx - half)
         y1 = max(0, cy - half)
         x2 = min(w0, cx + half)
@@ -446,8 +479,8 @@ def localize_and_flatten(
 
     # ── Annotation de contrôle : superposer la grille de la cible ─────────────
     mm_per_px_out = OUTER_CIRCLE_RADIUS_MM / OUTPUT_OUTER_RADIUS
-    r_disk_out    = int(BLACK_DISK_RADIUS_MM / mm_per_px_out)
-    r_outer_out   = OUTPUT_OUTER_RADIUS
+    r_disk_out = int(BLACK_DISK_RADIUS_MM / mm_per_px_out)
+    r_outer_out = OUTPUT_OUTER_RADIUS
 
     annot = flat.copy()
     thick = max(2, OUTPUT_SIZE // 400)
@@ -458,18 +491,18 @@ def localize_and_flatten(
     step_mm = (OUTER_CIRCLE_RADIUS_MM - BLACK_DISK_RADIUS_MM) / (n_rings + 1)
     for i in range(1, n_rings + 1):
         r_mm = BLACK_DISK_RADIUS_MM + i * step_mm
-        cv2.circle(annot, (OUTPUT_CENTER, OUTPUT_CENTER),
-                   int(r_mm / mm_per_px_out), (0, 165, 255), thick)
+        cv2.circle(
+            annot, (OUTPUT_CENTER, OUTPUT_CENTER), int(r_mm / mm_per_px_out), (0, 165, 255), thick
+        )
     # Cercle extérieur
     cv2.circle(annot, (OUTPUT_CENTER, OUTPUT_CENTER), r_outer_out, (0, 255, 0), thick)
     # Centre (croix bleue)
-    cv2.drawMarker(annot, (OUTPUT_CENTER, OUTPUT_CENTER), (255, 0, 0),
-                   cv2.MARKER_CROSS, 40, 2)
+    cv2.drawMarker(annot, (OUTPUT_CENTER, OUTPUT_CENTER), (255, 0, 0), cv2.MARKER_CROSS, 40, 2)
 
     # ── Sauvegarde ─────────────────────────────────────────────────────────────
-    flat_path  = out_dir / f"{stem}_flat.jpg"
+    flat_path = out_dir / f"{stem}_flat.jpg"
     annot_path = out_dir / f"{stem}_flat_annot.jpg"
-    cv2.imwrite(str(flat_path),  flat)
+    cv2.imwrite(str(flat_path), flat)
     cv2.imwrite(str(annot_path), annot)
     print(f"[OK]    → {flat_path.name}")
     print(f"[OK]    → {annot_path.name}")
@@ -483,16 +516,15 @@ def localize_and_flatten(
 # ── Point d'entrée CLI ─────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(
-        description="Localise et met à plat une cible de tir sportif.")
-    ap.add_argument("image",
-                    help="Chemin vers une image (ou un dossier d'images)")
-    ap.add_argument("--out",   default="outputs",
-                    help="Dossier de sortie (défaut : outputs/)")
-    ap.add_argument("--debug", action="store_true",
-                    help="Sauvegarde les images intermédiaires de chaque étape")
-    ap.add_argument("--show",  action="store_true",
-                    help="Ouvre l'image annotée avec l'application par défaut")
+    ap = argparse.ArgumentParser(description="Localise et met à plat une cible de tir sportif.")
+    ap.add_argument("image", help="Chemin vers une image (ou un dossier d'images)")
+    ap.add_argument("--out", default="outputs", help="Dossier de sortie (défaut : outputs/)")
+    ap.add_argument(
+        "--debug", action="store_true", help="Sauvegarde les images intermédiaires de chaque étape"
+    )
+    ap.add_argument(
+        "--show", action="store_true", help="Ouvre l'image annotée avec l'application par défaut"
+    )
     args = ap.parse_args()
 
     for img_path in _collect_images(args.image):

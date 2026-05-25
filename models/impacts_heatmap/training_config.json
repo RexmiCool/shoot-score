@@ -1,0 +1,14 @@
+{
+  "epochs": 15,
+  "batch_size": 4,
+  "learning_rate": 0.0003,
+  "weight_decay": 0.0001,
+  "warmup_epochs": 5,
+  "positive_threshold": 0.3,
+  "positive_weight": 50.0,
+  "bce_weight": 0.3,
+  "clip_grad": 1.0,
+  "loss": "combined_wmse_wbce",
+  "model": "ImpactHeatmapCNN",
+  "best_val_loss": 0.7966969933198846
+}
