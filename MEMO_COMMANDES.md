@@ -151,11 +151,12 @@ Effet:
 
 ---
 
-## 2.6 Build et installation Android
+## 2.6 Build et installation Android standalone (sans Metro)
 
 Quand:
 - apres modification du code natif Android,
-- apres changement du modele ONNX mobile.
+- apres changement du modele ONNX mobile,
+- quand on veut tester l'app sans PC ni serveur Metro.
 
 A. compiler Kotlin (verification rapide):
 
@@ -165,11 +166,11 @@ Push-Location .\mobile\android
 Pop-Location
 ```
 
-B. installer sur telephone connecte:
+B. installer la version standalone sur telephone connecte:
 
 ```powershell
 Push-Location .\mobile\android
-.\gradlew.bat app:installDebug
+.\gradlew.bat app:installRelease
 Pop-Location
 ```
 
@@ -178,6 +179,10 @@ C. lancer l'application:
 ```powershell
 adb shell monkey -p com.rexmi.shootscore -c android.intent.category.LAUNCHER 1
 ```
+
+Notes:
+- `installRelease` embarque le bundle JS dans l'APK: l'application fonctionne sans Metro.
+- `installDebug` reste utile pour le developpement UI avec Metro (hot reload).
 
 ---
 
@@ -212,6 +217,7 @@ npx expo start --tunnel --clear
 
 Note:
 - le mode inference native requiert une build Android installee (pas Expo Go seul).
+- ce mode depend de Metro et sert au dev UI, pas au test standalone.
 
 ---
 
@@ -256,11 +262,11 @@ Quand:
 .\.venv\Scripts\python src/export_onnx.py
 ```
 
-2. Reinstaller app debug:
+2. Reinstaller app standalone:
 
 ```powershell
 Push-Location .\mobile\android
-.\gradlew.bat app:installDebug
+.\gradlew.bat app:installRelease
 Pop-Location
 ```
 
@@ -280,11 +286,11 @@ Push-Location .\mobile\android
 Pop-Location
 ```
 
-2. Reinstaller app:
+2. Reinstaller app standalone:
 
 ```powershell
 Push-Location .\mobile\android
-.\gradlew.bat app:installDebug
+.\gradlew.bat app:installRelease
 Pop-Location
 ```
 
@@ -312,3 +318,4 @@ adb devices
 - Toujours utiliser `\.venv\Scripts\python` pour les scripts projet.
 - Apres un nouvel entrainement YOLO, il faut refaire l'export ONNX mobile.
 - Expo Go seul ne suffit pas pour l'inference native: il faut une build Android installee.
+- Pour tester sans Metro, utiliser la build `installRelease`.
