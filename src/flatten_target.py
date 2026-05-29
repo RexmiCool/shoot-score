@@ -198,13 +198,58 @@ def apply_flatten(
       - flat      : image corrigée brute (OUTPUT_SIZE × OUTPUT_SIZE)
       - flat_annot: idem + disque noir (rouge) et centre (croix bleue)
     """
-    flat = cv2.warpAffine(
+    # ── Padding adaptatif avant warp ───────────────────────────────────────────
+    # Les bandes blanches apparaissent quand certains pixels de sortie demandent
+    # des coordonnées source hors image. On calcule le padding nécessaire à
+    # partir de l'inverse de M sur les 4 coins de la sortie.
+    h, w = img.shape[:2]
+    A = M[:, :2]
+    t = M[:, 2]
+    A_inv = np.linalg.inv(A)
+
+    dst_corners = np.array(
+        [
+            [0.0, 0.0],
+            [float(OUTPUT_SIZE - 1), 0.0],
+            [float(OUTPUT_SIZE - 1), float(OUTPUT_SIZE - 1)],
+            [0.0, float(OUTPUT_SIZE - 1)],
+        ],
+        dtype=np.float64,
+    )
+    src_corners = np.array([A_inv @ (p - t) for p in dst_corners], dtype=np.float64)
+
+    min_x = float(np.min(src_corners[:, 0]))
+    max_x = float(np.max(src_corners[:, 0]))
+    min_y = float(np.min(src_corners[:, 1]))
+    max_y = float(np.max(src_corners[:, 1]))
+
+    safety = 4
+    pad_left = max(0, int(np.ceil(-min_x)) + safety)
+    pad_right = max(0, int(np.ceil(max_x - (w - 1))) + safety)
+    pad_top = max(0, int(np.ceil(-min_y)) + safety)
+    pad_bottom = max(0, int(np.ceil(max_y - (h - 1))) + safety)
+
+    # Réplication des bords pour éviter un fond artificiel blanc/gris.
+    img_padded = cv2.copyMakeBorder(
         img,
-        M,
+        pad_top,
+        pad_bottom,
+        pad_left,
+        pad_right,
+        cv2.BORDER_REPLICATE,
+    )
+
+    # Après padding, la coordonnée source réelle devient (x + pad_left, y + pad_top).
+    M_padded = M.copy()
+    M_padded[0, 2] -= M[0, 0] * pad_left + M[0, 1] * pad_top
+    M_padded[1, 2] -= M[1, 0] * pad_left + M[1, 1] * pad_top
+
+    flat = cv2.warpAffine(
+        img_padded,
+        M_padded,
         (OUTPUT_SIZE, OUTPUT_SIZE),
         flags=cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=(220, 220, 220),
+        borderMode=cv2.BORDER_REPLICATE,
     )
 
     # Annotation minimale : disque noir + centre
