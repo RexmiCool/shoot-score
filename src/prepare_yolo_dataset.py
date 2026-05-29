@@ -174,9 +174,7 @@ def prepare_dataset(
                 bw_norm = bw_px / w
                 bh_norm = bh_px / h
 
-                lines.append(
-                    f"0 {cx_norm:.6f} {cy_norm:.6f} {bw_norm:.6f} {bh_norm:.6f}"
-                )
+                lines.append(f"0 {cx_norm:.6f} {cy_norm:.6f} {bw_norm:.6f} {bh_norm:.6f}")
 
             label_name = flat_path.stem + ".txt"
             with open(out_dir / "labels" / split / label_name, "w") as f:
