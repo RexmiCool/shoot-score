@@ -1,8 +1,8 @@
 services:
   api:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: old/server/Dockerfile
     image: shoot-score-api:latest
     container_name: shoot-score-api
     ports:
@@ -10,9 +10,9 @@ services:
     volumes:
       # Poids YOLO entraînés (best.pt dans runs/detect/models/yolo_impacts/weights/)
       # Monter en lecture seule : le container n'a pas besoin de les modifier.
-      - ./runs:/app/runs:ro
+      - ../../runs:/app/runs:ro
       # Sorties (images annotées, JSON) — persistées sur l'hôte entre les redémarrages.
-      - ./outputs:/app/outputs
+      - ../../outputs:/app/outputs
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1

@@ -12,17 +12,17 @@
 services:
   api:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: old/server/Dockerfile
     image: shoot-score-api:rpi
     container_name: shoot-score-api
     ports:
       - "8000:8000"
     volumes:
       # Poids YOLO entraînés (.onnx recommandé sur RPi, voir README)
-      - ./runs:/app/runs:ro
+      - ../../runs:/app/runs:ro
       # Sorties persistées sur l'hôte entre les redémarrages
-      - ./outputs:/app/outputs
+      - ../../outputs:/app/outputs
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1

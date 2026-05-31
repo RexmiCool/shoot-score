@@ -288,7 +288,8 @@ Sur le Raspberry Pi, depuis la racine du projet clone :
 
 ```bash
 cp old/server/api.py src/api.py
-docker compose -f old/server/docker-compose.rpi.yml up -d --build
+docker compose -f old/server/docker-compose.rpi.yml --project-directory . up -d --build
+curl http://localhost:8000/health
 ```
 
 Notes:
