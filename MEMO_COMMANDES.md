@@ -203,7 +203,107 @@ Effet attendu:
 
 ---
 
-## 2.8 Demarrage app mobile (dev JS)
+## 2.8 Lancement serveur sans Docker (dev / test rapide)
+
+Quand:
+- tester le mode serveur sans Docker.
+
+Commande:
+
+```powershell
+$env:PYTHONPATH = "src"
+.\venv\Scripts\uvicorn api:app --app-dir old\server --host 0.0.0.0 --port 8000
+```
+
+Afficher l'IP locale pour la configurer dans l'app:
+
+```powershell
+ipconfig | Select-String "IPv4"
+```
+
+---
+
+## 2.9 Lancement serveur avec Docker
+
+Quand:
+- deployer le serveur sur un PC ou un Raspberry Pi,
+- vouloir un environnement isole et reproductible,
+- utiliser le mode hybride serveur + embarque de l'app mobile.
+
+Pre-requis : Docker Desktop installe et demarre.
+
+### A. PC (x86, avec ou sans GPU NVIDIA)
+
+1. Preparer l'API dans `src/` (le Dockerfile copie `src/`) :
+
+```powershell
+Copy-Item old\server\api.py src\api.py
+```
+
+2. Construire l'image depuis la racine du projet :
+
+```powershell
+docker build -f old\server\Dockerfile -t shoot-score-api:latest .
+```
+
+3. Lancer le container (avec GPU NVIDIA si disponible) :
+
+```powershell
+docker run -d `
+  --name shoot-score-api `
+  -p 8000:8000 `
+  --gpus all `
+  -v ${PWD}\runs:/app/runs:ro `
+  -v ${PWD}\outputs:/app/outputs `
+  shoot-score-api:latest
+```
+
+Sans GPU (CPU uniquement) : retirer `--gpus all`.
+
+Alternative avec docker compose :
+
+```powershell
+# Depuis la racine du projet (pas depuis old/server/)
+docker compose -f old\server\docker-compose.yml `
+  --project-directory . `
+  up -d --build
+```
+
+4. Verifier que le serveur repond :
+
+```powershell
+curl http://localhost:8000/health
+```
+
+5. Arreter le container :
+
+```powershell
+docker stop shoot-score-api
+docker rm shoot-score-api
+```
+
+### B. Raspberry Pi (ARM64, sans GPU)
+
+Sur le Raspberry Pi, depuis la racine du projet clone :
+
+```bash
+cp old/server/api.py src/api.py
+docker compose -f old/server/docker-compose.rpi.yml up -d --build
+```
+
+Notes:
+- Le moteur bascule automatiquement sur ONNX Runtime (CPU) si `best.pt` absent.
+- Exporter d'abord le modele au format ONNX sur le PC avant de copier sur le RPi :
+
+```powershell
+.\venv\Scripts\python src/export_onnx.py
+```
+
+- Monter `runs/detect/models/yolo_impacts/weights/best.onnx` dans le container RPi.
+
+---
+
+## 2.10 Demarrage app mobile (dev JS)
 
 Quand:
 - developpement interface mobile Expo.
@@ -276,6 +376,44 @@ Pop-Location
 adb shell monkey -p com.rexmi.shootscore -c android.intent.category.LAUNCHER 1
 ```
 
+## Scenario C - Je veux tester le mode serveur depuis l'app
+
+1. (Si pas deja fait) Preparer `src/api.py` :
+
+```powershell
+Copy-Item old\server\api.py src\api.py
+```
+
+2. Lancer le serveur Docker :
+
+```powershell
+docker run -d --name shoot-score-api -p 8000:8000 `
+  -v ${PWD}\runs:/app/runs:ro `
+  -v ${PWD}\outputs:/app/outputs `
+  shoot-score-api:latest
+```
+
+Ou sans Docker :
+
+```powershell
+$env:PYTHONPATH = "src"
+.\venv\Scripts\uvicorn api:app --app-dir old\server --host 0.0.0.0 --port 8000
+```
+
+3. Recuperer l'IP du PC sur le reseau Wi-Fi :
+
+```powershell
+ipconfig | Select-String "IPv4"
+```
+
+4. Dans l'app mobile : **Parametres** -> entrer `http://<IP>:8000` -> **Tester** -> **Enregistrer**.
+
+5. Prendre une photo : le champ `engine` doit afficher `yolo` ou `onnx` (pas `offline-native`).
+
+6. Pour tester le fallback embarque : couper le serveur puis reprendre une photo.
+
+---
+
 ## Scenario B - L'app mobile retourne une erreur d'inference
 
 1. Verifier build compile:
@@ -304,6 +442,7 @@ adb devices
 
 ## 5) Fichiers Clefs
 
+- API serveur: `old/server/api.py` (copier dans `src/api.py` pour Docker)
 - Pipeline desktop: `src/pipeline.py`
 - Detection YOLO desktop: `src/detect_impacts_yolo.py`
 - Export modele mobile: `src/export_onnx.py`
