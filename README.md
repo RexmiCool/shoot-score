@@ -1,634 +1,367 @@
-# shoot-score
+# ShootScore
 
-Outil de détection automatique des impacts de balles sur des cibles de tir,
-depuis une simple photo prise sur le stand.
+ShootScore est une application Android qui photographie une cible, detecte les impacts et calcule les scores. Le traitement de production est entierement embarque dans l'appareil : aucune API distante ni connexion reseau n'est necessaire pendant l'analyse.
 
-## Memo Operationnel
+## Sommaire
 
-Pour une vue complete du fonctionnement global + les commandes (avec quand les utiliser), voir :
+- [Architecture](#architecture)
+- [Flux complet d'une photo](#flux-complet-dune-photo)
+- [Parcours utilisateur](#parcours-utilisateur)
+- [Moteur natif Android](#moteur-natif-android)
+- [Series, comparaison et stockage](#series-comparaison-et-stockage)
+- [Ecrans et composants](#ecrans-et-composants)
+- [Pipeline Python](#pipeline-python)
+- [Entrainement et export du modele](#entrainement-et-export-du-modele)
+- [CNN des quatre reperes](#cnn-des-quatre-reperes)
+- [Installation et commandes](#installation-et-commandes)
+- [Diagnostic](#diagnostic)
 
-- `MEMO_COMMANDES.md`
+## Architecture
 
-> Note: les fichiers de l'ancienne architecture (serveur + scripts legacy)
-> ont ete archives dans `old/` pour garder une racine de projet plus propre.
+```text
+mobile/
+  app/                         Ecrans et orchestration du parcours utilisateur
+  components/                  Overlays, images zoomables et tableaux de scores
+  services/api.ts              Contrat JS vers le moteur natif
+  services/impactEngine.ts     Couche de compatibilite vers le wrapper natif
+  services/storage.ts          Historique et images persistantes
+  services/uiSettings.ts       Preferences de recadrage et d'affichage
+  src/native/ImpactEngine.ts   Wrapper React Native du module Android
+  android/app/src/main/...     Module Kotlin et enregistrement React Native
+  android/app/src/main/assets/ Modeles embarques
 
-```
-Photo brute (téléphone)
-        │
-        ▼
-  flatten_target   ──►  image recadrée 1056×1056 px, perspective corrigée
-        │
-        ▼
-  detect_rings     ──►  anneaux calibrés + étalonnage mm/px
-        │
-        ▼
-  detect_impacts_yolo ──►  impacts détectés + score par zone
-```
-
----
-
-## Prérequis
-
-### Développement local
-
-- Python 3.10+  
-- [uv](https://github.com/astral-sh/uv) (gestionnaire de paquets)
-
-```powershell
-uv sync          # installe toutes les dépendances (torch CUDA inclus)
-```
-
-> **GPU** : le projet est configuré pour PyTorch CUDA 12.4.
-> Si votre pilote est plus ancien, modifiez l'URL dans `pyproject.toml`
-> (`cu124` → `cu121` ou `cu118`) puis relancez `uv sync`.
-
-### Via Docker (recommandé pour le serveur API)
-
-- [Docker](https://docs.docker.com/get-docker/) 24+
-- [Docker Compose](https://docs.docker.com/compose/) v2
-- *(Optionnel)* [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) pour l'accélération GPU
-
----
-
-## Structure des dossiers
-
-```
-data/
-  raw/              photos brutes (entrée du pipeline)
-  CornerCases/      photos difficiles pour les tests
-  yolo/             dataset YOLO généré par prepare_yolo_dataset.py
-  ressources/       image de référence de la cible (cible.jpg)
-outputs/            résultats (un sous-dossier par image)
-src/                tous les scripts
-runs/               poids YOLO après entraînement
+src/                           Pipeline Python desktop et outils ML
+models/, tf_model/             Checkpoints et exports de recherche
+mobile/android/.../assets/     Modeles effectivement charges par Android
+data/                          Photos, annotations et datasets
+outputs/                       Resultats des traitements Python
+runs/                          Sorties d'entrainement YOLO
 ```
 
----
+Le point d'entree JavaScript est [mobile/index.js](mobile/index.js), puis Expo Router charge [mobile/app/_layout.tsx](mobile/app/_layout.tsx). Le module natif est enregistre par [ImpactEnginePackage.kt](mobile/android/app/src/main/java/com/rexmi/shootscore/impact/ImpactEnginePackage.kt) et expose le nom `ImpactEngine`.
 
-## Scripts principaux
+Les fichiers les plus importants sont :
 
-### `src/pipeline.py` — Pipeline complet ⭐
-
-Script principal à utiliser au quotidien. Prend une photo brute (ou un
-dossier de photos) et produit l'image annotée avec tous les impacts et leurs
-scores, en enchaînant automatiquement les 3 étapes.
-
-```powershell
-# Une seule photo
-python src/pipeline.py data/raw/ma_photo.jpg --show
-
-# Tout un dossier
-python src/pipeline.py data/raw/ --out outputs --show
-
-# Avec des poids YOLO spécifiques
-python src/pipeline.py data/raw/ --weights models/best.pt --conf 0.3
-```
-
-**Fichiers produits** dans `outputs/<nom_image>/` :
-
-| Fichier | Description |
-|---|---|
-| `<nom>_flat.jpg` | Image recadrée et corrigée en perspective |
-| `<nom>_rings.jpg` | Anneaux détectés (debug visuel) |
-| `<nom>_rings.json` | Étalonnage mm/px |
-| `<nom>_impacts_yolo.jpg` | ✅ Résultat final : impacts annotés + scores |
-| `<nom>_impacts_yolo.json` | Données structurées (impacts, scores, distances) |
-
-**Options** :
-
-| Option | Défaut | Description |
+| Responsabilite | Fichier | Ce qu'il gere |
 |---|---|---|
-| `--out` | `outputs` | Dossier de sortie |
-| `--weights` | `runs/detect/models/…/best.pt` | Poids YOLO |
-| `--conf` | `0.25` | Seuil de confiance YOLO |
-| `--iou` | `0.4` | Seuil IoU (suppression des doublons) |
-| `--device` | auto | `0` = GPU, `cpu` = CPU |
-| `--debug` | off | Sauvegarde les images intermédiaires |
-| `--show` | off | Ouvre le résultat à la fin |
+| Camera et orchestration | [mobile/app/camera.tsx](mobile/app/camera.tsx) | Acquisition, galerie, recadrage, lancement analyse/diff |
+| Contrat d'analyse | [mobile/services/api.ts](mobile/services/api.ts) | Appels natifs `processImage`, `diffImages`, `rectifyPerspective` |
+| Bridge JS/Android | [mobile/src/native/ImpactEngine.ts](mobile/src/native/ImpactEngine.ts) | Resolution du module natif et controle des methodes |
+| Traitement image | [ImpactEngineModule.kt](mobile/android/app/src/main/java/com/rexmi/shootscore/impact/ImpactEngineModule.kt) | Decodage, disque, flatten, YOLO, scoring, diff |
+| Persistance | [mobile/services/storage.ts](mobile/services/storage.ts) | Series, tirs, images flat, corrections, export ZIP |
+| Preferences | [mobile/services/uiSettings.ts](mobile/services/uiSettings.ts) | Mode crop, mode zones, mode base |
+| Affichage serie | [mobile/app/diff.tsx](mobile/app/diff.tsx) | Galerie des tirs, overlays, zones, corrections manuelles |
 
----
+## Flux complet d'une photo
 
-### `src/diff_shots.py` — Différentiel entre deux séries de tir ⭐
+### 1. Acquisition
 
-Compare deux photos de la **même cible** (avant et après une série) et
-identifie uniquement les **nouveaux impacts**, en ignorant ceux déjà présents.
+L'utilisateur ouvre la camera depuis [mobile/app/index.tsx](mobile/app/index.tsx). La navigation est definie par [mobile/app/_layout.tsx](mobile/app/_layout.tsx).
 
-```powershell
-# Photos brutes
-python src/diff_shots.py data/raw/serie1.jpg data/raw/serie2.jpg --show
+Dans [mobile/app/camera.tsx](mobile/app/camera.tsx) :
 
-# Images déjà aplaties (plus rapide, évite de recalculer)
-python src/diff_shots.py outputs/.../shot1_flat.jpg outputs/.../shot2_flat.jpg --show
+- `handleCapture()` appelle `CameraView.takePictureAsync()`.
+- `handleGallery()` appelle `ImagePicker.launchImageLibraryAsync()`.
+- En mode `new_shot`, plusieurs photos peuvent etre selectionnees et traitees dans l'ordre.
+- En mode `add_shot`, une seule photo est ajoutee a la serie existante.
 
-# Tolérance d'appariement personnalisée
-python src/diff_shots.py avant.jpg apres.jpg --tol 10 --show
-```
+La photo originale est conservee comme `photo_uri` pour eviter qu'une comparaison future ne reutilise une image deja aplatie ou recadree.
 
-**Fonctionnement** : les deux images sont recalées dans le même repère
-(disque noir centré en 520×520 px). Un impact "après" est considéré
-**nouveau** si aucun impact "avant" n'est à moins de `--tol` mm (défaut 8mm).
+### 2. Preparation et recadrage
 
-**Fichiers produits** dans le dossier de l'image "après" :
+Toujours dans `camera.tsx` :
 
-| Fichier | Description |
-|---|---|
-| `<nom_apres>_diff.jpg` | Anciens impacts en gris pointillé, nouveaux en couleur |
-| `<nom_apres>_diff.json` | `n_new`, `score_session`, `score_total`, liste des impacts |
+- `prepareImageForAnalysis()` recupere les dimensions si necessaire.
+- `buildViewfinderSquareCrop()` calcule le crop correspondant au viseur camera.
+- `buildCenteredSquareCrop()` calcule un crop carre centre pour les images de galerie.
+- `cropToAnalysisSquare()` applique le crop avec `expo-image-manipulator`.
 
-**Options** :
+Le recadrage automatique est utilise avant l'analyse, sauf si l'image a deja ete transformee par un mode manuel.
 
-| Option | Défaut | Description |
+Trois outils manuels sont disponibles :
+
+- `CropModal` : zoom tactile, deplacement et selection d'un carre.
+- `CornerCropModal` : selection de quatre coins puis correction de perspective.
+- `AxisCropModal` : placement des points haut, gauche, bas et droite pour construire une rectification autour de la cible.
+
+Les fonctions `applyManualCrop()`, `applyManualCornerRectification()` et `applyManualAxesRectification()` appliquent ces choix. La rectification passe par `api.ts`, puis par `ImpactEngine.rectifyPerspective()`.
+
+Les preferences de recadrage et d'affichage sont persistees par [mobile/services/uiSettings.ts](mobile/services/uiSettings.ts) dans `AsyncStorage` :
+
+- `manual_crop_enabled`
+- `manual_crop_mode` : `frame`, `corners` ou `axes`
+- `base_mode_enabled`
+- `score_zones_mode` : `model` ou `detected`
+
+### 3. Appel JS du moteur embarque
+
+[mobile/services/api.ts](mobile/services/api.ts) est la facade utilisee par les ecrans :
+
+- `processImage(uri)` pour le premier tir d'une serie ;
+- `diffImages(beforeUri, afterUri)` pour les tirs suivants ;
+- `rectifyPerspective(uri, points, outputSize)` pour le recadrage par points.
+
+Avant chaque appel, `ensureNativeEngineReady()` verifie Android et appelle `ImpactEngine.ping()`. Le service convertit ensuite la reponse native vers les types `ProcessResult` et `DiffResult`, avec notamment :
+
+- `impacts` ou `new_impacts` ;
+- `n_impacts`, `n_new`, `n_after` ;
+- `total_score`, `score_session`, `score_total` ;
+- `flat_b64`, `img_width`, `img_height`.
+
+### 4. Traitement natif Kotlin
+
+Le traitement reel est dans [ImpactEngineModule.kt](mobile/android/app/src/main/java/com/rexmi/shootscore/impact/ImpactEngineModule.kt). La methode publique `processImage()` appelle `runProcessFromUri()` ; le chemin general est :
+
+1. **Lecture de l'image** : `decodeBitmapFromUri()` et `decodeBitmapFullFromUri()` lisent l'URI, appliquent l'orientation EXIF et limitent la taille de decodage.
+2. **Localisation de la cible** : `detectBlackDisk()` cherche le disque noir central et estime son ellipse, son centre, ses axes et son angle.
+3. **Mise a plat** : `buildFlattenMatrix()` calcule la transformation qui ramene l'ellipse a un cercle ; `flattenBitmap()` produit une image carree de `1056 x 1056` pixels.
+4. **Preparation YOLO** : `runYoloInference()` redimensionne l'image dans une entree `1056 x 1056`, applique un letterbox gris, convertit en RGB float NCHW et cree le tenseur ONNX.
+5. **Inference** : le modele `impact_yolo.onnx` est charge une fois par `loadYoloSession()` et execute par ONNX Runtime.
+6. **Post-traitement** : les boites sous `YOLO_CONF_THRESHOLD` sont ignorees, puis `nonMaxSuppression()` supprime les doublons avec `YOLO_IOU_THRESHOLD`.
+7. **Filtrage geometrique** : les detections sont ramenees dans l'image source, filtrees autour de la zone cible et converties en centres/rayons.
+8. **Scoring** : `scoreFromDistanceMm()` calcule le score a partir de la distance au centre et de l'echelle `MM_PER_PX_OUT`.
+9. **Serialisation** : l'image aplatie est encodee en JPEG base64 et le resultat est renvoye a JavaScript.
+
+Le modele YOLO utilise en production est [impact_yolo.onnx](mobile/android/app/src/main/assets/impact_yolo.onnx). Le module contient aussi un chemin heatmap TFLite (`loadInterpreter()` et `runHeatmapInference()`), mais le chemin principal de `processImage()` utilise actuellement YOLO ONNX.
+
+### 5. Resultat du premier tir
+
+Dans `handlePhoto()` :
+
+1. `processImage()` analyse la photo preparee.
+2. `createSeries()` cree la serie avec un premier `Shot`.
+3. Le resultat est place dans le cache memoire avec `setLastSeries()`.
+4. L'application navigue vers `/diff`.
+
+Le premier tir considere tous ses impacts comme nouveaux : `new_impacts` et `all_impacts` contiennent la meme liste.
+
+### 6. Tirs suivants et comparaison
+
+Pour un tir supplementaire, `handlePhoto()` :
+
+1. charge l'historique avec `getHistory()` ;
+2. recupere le `photo_uri` du dernier tir ;
+3. prepare a nouveau la photo precedente et la nouvelle photo ;
+4. appelle `diffImages(before, after)` ;
+5. appelle `addShotToSeries()` ;
+6. revient vers l'ecran `/diff`.
+
+Cote natif, `diffImages()` analyse les deux images, apparie les impacts et distingue :
+
+- les impacts deja presents ;
+- les nouveaux impacts ;
+- le score du tir (`score_session`) ;
+- le score cumule (`score_total`).
+
+La tolerance de matching native est `MATCH_TOL_MM = 15` mm dans `ImpactEngineModule.kt`.
+
+## Parcours utilisateur
+
+### Accueil
+
+[mobile/app/index.tsx](mobile/app/index.tsx) propose :
+
+- continuer la derniere serie ;
+- demarrer une nouvelle serie ;
+- ouvrir l'historique ;
+- ouvrir les parametres/export.
+
+### Camera
+
+[mobile/app/camera.tsx](mobile/app/camera.tsx) affiche le viseur, la camera, la galerie, les modes de recadrage et l'overlay de progression. Les messages de traitement sont purement indicatifs ; le calcul est realise par le module natif.
+
+### Serie et affichage
+
+[mobile/app/diff.tsx](mobile/app/diff.tsx) recharge la serie, affiche les tirs dans un carousel et propose :
+
+- vue `new` : nouveaux impacts du tir courant ;
+- vue `all` : impacts cumules ;
+- vue `flat` : image sans annotation ;
+- zoom et deplacement de l'image ;
+- affichage optionnel des zones de score ;
+- selection d'un impact ;
+- ajout manuel d'un impact et choix du score ;
+- modification/suppression des impacts ;
+- suppression du dernier tir.
+
+Les composants responsables sont [ZoomableImage.tsx](mobile/components/ZoomableImage.tsx), [ImpactOverlay.tsx](mobile/components/ImpactOverlay.tsx), [TargetZonesOverlay.tsx](mobile/components/TargetZonesOverlay.tsx), [PlacementOverlay.tsx](mobile/components/PlacementOverlay.tsx) et [ScoreBoard.tsx](mobile/components/ScoreBoard.tsx).
+
+Le mode de zones `detected` appelle `detectScoreRings()` et affiche les anneaux detectes via `TargetZonesOverlay`. Le mode `model` dessine les zones a partir des rayons theoriques.
+
+### Historique et export
+
+[mobile/app/history.tsx](mobile/app/history.tsx) lit les series, affiche la derniere image flat, les compteurs et la taille disque. [mobile/app/settings.tsx](mobile/app/settings.tsx) exporte les images flat dans une archive ZIP partageable.
+
+## Series, comparaison et stockage
+
+[mobile/services/storage.ts](mobile/services/storage.ts) utilise deux stockages locaux :
+
+- `AsyncStorage` pour les metadonnees sous `@shootscore/history_v2` ;
+- `expo-file-system` pour les images flat JPEG dans `documentDirectory/flats/`.
+
+Un `SeriesRecord` contient un identifiant, une date, une liste de `Shot`, le score total et le nombre d'impacts. Chaque `Shot` contient notamment :
+
+- `photo_uri` : URI temporaire de la photo originale ;
+- `flat_file_uri` : image aplatie persistante ;
+- dimensions de l'image ;
+- nombre d'impacts et score ;
+- `new_impacts` et `all_impacts`.
+
+Les operations principales sont `createSeries()`, `addShotToSeries()`, `updateShotImpacts()`, `deleteLastShot()`, `deleteSeries()`, `clearHistory()` et `exportSeriesZip()`.
+
+## Ecrans et composants
+
+La navigation est definie dans [mobile/app/_layout.tsx](mobile/app/_layout.tsx) :
+
+| Ecran | Fichier | Role |
 |---|---|---|
-| `--out` | `outputs` | Dossier de sortie racine |
-| `--tol` | `8.0` | Tolérance d'appariement avant/après (mm) |
-| `--conf` | `0.25` | Seuil de confiance YOLO |
-| `--show` | off | Ouvre le résultat à la fin |
+| Accueil | [index.tsx](mobile/app/index.tsx) | Demarrer/reprendre une serie |
+| Camera | [camera.tsx](mobile/app/camera.tsx) | Capturer, recadrer et analyser |
+| Serie | [diff.tsx](mobile/app/diff.tsx) | Voir et corriger les tirs |
+| Historique | [history.tsx](mobile/app/history.tsx) | Reouvrir ou supprimer une serie |
+| Parametres | [settings.tsx](mobile/app/settings.tsx) | Etat du mode embarque et export |
+| Diagnostic | [debug-pipeline.tsx](mobile/app/debug-pipeline.tsx) | Executer une etape native isolee |
+| Resultat legacy | [result.tsx](mobile/app/result.tsx) | Ecran de resultat individuel conserve pour compatibilite |
 
----
+## Pipeline Python
 
-## Scripts du pipeline interne
+Le code Python sert au traitement desktop, a la creation du dataset et a l'entrainement. Il ne fait pas partie du chemin d'analyse de l'application Android.
 
-Ces scripts sont appelés automatiquement par `pipeline.py`, mais peuvent aussi
-être utilisés indépendamment.
+Le pipeline complet est lance par [src/pipeline.py](src/pipeline.py) :
 
-### `src/flatten_target.py` — Correction de perspective
+1. [src/localize_target.py](src/localize_target.py) localise le disque noir.
+2. [src/flatten_target.py](src/flatten_target.py) corrige la perspective et produit `<stem>_flat.jpg` en `1056 x 1056`.
+3. [src/detect_rings.py](src/detect_rings.py) cherche les bords d'anneaux par profil radial et genere `<stem>_rings.json`.
+4. [src/detect_impacts_yolo.py](src/detect_impacts_yolo.py) execute YOLO ou ONNX, convertit les boites en impacts et calcule les scores.
+5. [src/diff_shots.py](src/diff_shots.py) compare deux resultats et produit les nouveaux impacts.
 
-Détecte le disque noir central (Ø200mm), fitte une ellipse sur son contour
-et calcule la transformation affine pour corriger la perspective. Produit une
-image carrée 1056×1056 px centrée sur la cible.
+Les sorties sont placees dans `outputs/<nom>/` : image flat, visualisation des anneaux, JSON de calibration, image annotee et JSON des impacts.
 
-```powershell
-python src/flatten_target.py data/raw/ma_photo.jpg --show
-python src/flatten_target.py data/raw/ --out outputs --debug
+Les scripts heatmap et patch CNN (`src/train_heatmap_cnn.py`, `src/detect_impacts_heatmap.py`, `src/train_patch_cnn.py`) sont des pistes experimentales. Ils ne sont pas le moteur actif de l'application Android.
+
+## Entrainement et export du modele
+
+### Preparation des annotations
+
+`src/label_impacts.py` permet de placer les impacts sur les images flat. `src/prepare_yolo_dataset.py` convertit les labels en dataset YOLO dans `data/yolo/`.
+
+### Entrainement
+
+`src/train_yolo.py` fine-tune un modele YOLO, par defaut `yolov8n.pt`, avec des images `1056 x 1056`. Le checkpoint produit est normalement :
+
+```text
+models/yolo_impacts/weights/best.pt
 ```
 
-### `src/detect_rings.py` — Calibration des anneaux
+### Export Android
 
-Part d'une image `*_flat.jpg`. Calcule le profil radial de gradient depuis
-le centre, détecte les pics (= bords des anneaux) et les mappe aux valeurs
-théoriques (100, 125, 150, 175, 200, 225, 250mm). Produit l'étalonnage
-mm/px dans `*_rings.json`.
+`src/export_onnx.py` exporte le checkpoint en ONNX et copie le fichier vers :
 
-```powershell
-python src/detect_rings.py outputs/flatten/ma_photo/ma_photo_flat.jpg --show
-python src/detect_rings.py outputs/flatten/ --show   # traite tout le dossier
+```text
+mobile/android/app/src/main/assets/impact_yolo.onnx
 ```
 
-### `src/detect_impacts_yolo.py` — Inférence YOLO
+Apres chaque nouvel export, il faut reconstruire l'application Android pour embarquer le nouveau modele.
 
-Charge le modèle YOLOv8 entraîné, détecte les impacts sur une image
-`*_flat.jpg` et score chaque impact grâce à l'étalonnage `*_rings.json`.
+## CNN des quatre reperes
 
-```powershell
-python src/detect_impacts_yolo.py outputs/flatten/ma_photo/ma_photo_flat.jpg --show
-python src/detect_impacts_yolo.py outputs/flatten/ --conf 0.3 --show
-```
+Le mode base utilise quatre CNN independants : `top`, `left`, `bottom` et `right`. Chaque modele recoit une ROI autour de la position attendue par le viseur et renvoie la presence du chiffre `1` ainsi qu'un decalage `dx/dy`.
 
-### `src/localize_target.py` — Localisation du disque noir
+Le pipeline est compose de :
 
-Brique de base appelée par `flatten_target.py`. Détecte le grand disque noir
-dans l'image brute par seuillage + morphologie. Peut être lancé seul pour
-diagnostiquer des problèmes de localisation.
+- [src/label_axis_markers.py](src/label_axis_markers.py) : annotation manuelle des quatre `1` ;
+- [src/prepare_axis_dataset.py](src/prepare_axis_dataset.py) : extraction des quatre ROI ;
+- [src/models/axis_marker_cnn.py](src/models/axis_marker_cnn.py) : architecture CNN ;
+- [src/train_axis_cnn.py](src/train_axis_cnn.py) : entrainement des quatre checkpoints ;
+- [src/export_axis_markers_onnx.py](src/export_axis_markers_onnx.py) : export vers Android.
 
-```powershell
-python src/localize_target.py data/raw/ma_photo.jpg --debug --show
-```
-
----
-
-## Scripts d'entraînement du modèle YOLO
-
-À exécuter une seule fois (ou pour réentraîner avec de nouvelles données).
-
-### `src/label_impacts.py` — Labélisation interactive
-
-Outil de création du ground truth. Ouvre une fenêtre interactive sur une
-image `*_flat.jpg` (ou `*_rings.jpg` si disponible pour voir les anneaux).
+### Annotation
 
 ```powershell
-# Une image
-python src/label_impacts.py outputs/flatten/ma_photo/ma_photo_flat.jpg
-
-# Tout un dossier (navigation N/P)
-python src/label_impacts.py outputs/flatten/
-python src/label_impacts.py outputs/flatten/ --skip-done  # ignore les déjà labelisées
+.\.venv\Scripts\python src/label_axis_markers.py data/raw
 ```
 
-**Contrôles** :
+Touches : `1=haut`, `2=gauche`, `3=bas`, `4=droite`, clic pour placer, clic droit pour supprimer, `R` pour effacer, `S` pour sauver, `N/P` pour naviguer, `Q` pour quitter. Les labels sont ecrits a cote des photos sous `<photo>_axis_labels.json`.
 
-| Touche / Action | Effet |
-|---|---|
-| Clic gauche | Ajouter un impact |
-| Clic droit | Supprimer l'impact le plus proche |
-| `Z` | Annuler le dernier ajout |
-| `S` | Sauvegarder |
-| `N` | Image suivante (mode dossier) |
-| `P` | Image précédente (mode dossier) |
-| `Q` / Échap | Quitter (sauvegarde automatique) |
-
-Sauvegarde : `<stem>_labels.json` dans le même dossier que le `_flat.jpg`.
-
-### `src/prepare_yolo_dataset.py` — Préparation du dataset
-
-Convertit les fichiers `*_labels.json` en format YOLO (80% train / 20% val).
+### Preparation et entrainement
 
 ```powershell
-python src/prepare_yolo_dataset.py outputs/flatten
-python src/prepare_yolo_dataset.py outputs/flatten --out data/yolo --val-ratio 0.2
+.\.venv\Scripts\python src/prepare_axis_dataset.py data/raw --out data/axis_markers --screen-aspect 0.5625
+.\.venv\Scripts\python src/train_axis_cnn.py --data data/axis_markers --epochs 80
 ```
 
-Produit : `data/yolo/dataset.yaml` + arborescence `images/` et `labels/`.
+Le dataset contient quatre dossiers `top`, `left`, `bottom`, `right`, chacun avec ses splits `train` et `val`. Le modele apprend la presence et le decalage du chiffre par rapport a la position attendue.
 
-### `src/train_yolo.py` — Entraînement
-
-Fine-tune YOLOv8n sur le dataset d'impacts. Recommandé sur GPU (~10-30 min
-pour 200 epochs avec ~30 images).
+### Export et integration Android
 
 ```powershell
-python src/train_yolo.py                              # paramètres par défaut
-python src/train_yolo.py --epochs 300 --batch 4      # GPU avec peu de VRAM
-python src/train_yolo.py --model yolov8s.pt           # modèle plus grand
+.\.venv\Scripts\python src/export_axis_markers_onnx.py
 ```
 
-Poids produits : `runs/detect/models/yolo_impacts/weights/best.pt`
+Les assets produits sont `axis_marker_top.onnx`, `axis_marker_left.onnx`, `axis_marker_bottom.onnx` et `axis_marker_right.onnx` dans `mobile/android/app/src/main/assets/`. [ImpactEngineModule.kt](mobile/android/app/src/main/java/com/rexmi/shootscore/impact/ImpactEngineModule.kt) les charge via ONNX Runtime ; en leur absence, il conserve temporairement la detection classique.
 
-| Option | Défaut | Description |
-|---|---|---|
-| `--data` | `data/yolo/dataset.yaml` | Dataset |
-| `--model` | `yolov8n.pt` | Modèle de départ |
-| `--epochs` | `200` | Nombre d'epochs |
-| `--batch` | `8` | Taille de batch (réduire si OOM) |
-| `--imgsz` | `1056` | Résolution d'entraînement |
-| `--device` | auto | `0` = GPU, `cpu` = CPU |
+## Installation et commandes
 
----
-
-## Scripts utilitaires / expérimentaux
-
-### `src/detect_impacts.py` — Détection morphologique (sans IA)
-
-Approche alternative n'utilisant pas YOLO. Détecte les impacts par
-transformées morphologiques (black-hat sur zone blanche, top-hat sur disque
-noir). Moins robuste que YOLO mais ne nécessite pas d'entraînement.
+### Environnement Python
 
 ```powershell
-python src/detect_impacts.py outputs/flatten/ma_photo/ma_photo_flat.jpg --show
-```
-
-### `src/tune_impacts.py` — Optimisation des paramètres morphologiques
-
-Grid search sur les 5 paramètres de `detect_impacts.py` (≈2000 combinaisons).
-Évalue Precision / Recall / F1 sur toutes les images labelisées.
-
-```powershell
-python src/tune_impacts.py outputs/flatten
-python src/tune_impacts.py outputs/flatten --top 30
-```
-
-Sauvegarde : `outputs/flatten/tune_results.json`
-
-### `src/detect_cv.py` — Prototype initial (legacy)
-
-Premier prototype de détection par OpenCV classique. Conservé à titre de
-référence, remplacé par le pipeline actuel.
-
-### `src/crop_only.py` — Recadrage simple (utilitaire)
-
-Recadre une image sur la zone de la cible sans correction de perspective.
-Utile pour un aperçu rapide.
-
----
-
-## Application mobile (React Native + Expo)
-
-L'application mobile communique avec le PC via une API REST (FastAPI).
-Le PC et le téléphone doivent être sur le **même réseau Wi-Fi**.
-
-### 1. Lancer le serveur API sur le PC
-
-**Option A — Windows (script bat)**
-
-```bat
-start-server.bat
-```
-
-Affiche automatiquement les IP locales disponibles et démarre le serveur
-sur `http://0.0.0.0:8000`. Utilise le venv `.venv\` créé par `uv sync`.
-
-**Option B — Ligne de commande (tous OS)**
-
-```powershell
-# Installer les dépendances (fastapi + uvicorn)
 uv sync
-
-# Lancer le serveur
-uvicorn src.api:app --host 0.0.0.0 --port 8000
-
-# Trouver l'IP du PC sur le réseau local
-ipconfig   # chercher "Adresse IPv4" sous "Carte réseau sans fil Wi-Fi"
 ```
 
-**Option C — Docker (recommandé en production)**
-
-Voir la section [Déploiement Docker](#déploiement-docker) ci-dessous.
-
-### 2. Installer et lancer l'application mobile
+### Pipeline desktop
 
 ```powershell
-cd mobile
+.\.venv\Scripts\python src/pipeline.py data/raw/photo.jpg --show
+.\.venv\Scripts\python src/pipeline.py data/raw --out outputs --show
+.\.venv\Scripts\python src/diff_shots.py avant.jpg apres.jpg --tol 8 --show
+```
+
+### Entrainement et export
+
+```powershell
+.\.venv\Scripts\python src/prepare_yolo_dataset.py outputs/flatten --out data/yolo --val-ratio 0.2
+.\.venv\Scripts\python src/train_yolo.py --data data/yolo/dataset.yaml --epochs 200 --batch 8 --imgsz 1056
+.\.venv\Scripts\python src/export_onnx.py
+```
+
+### Developpement mobile
+
+```powershell
+Push-Location mobile
 npm install
 npx expo start
+Pop-Location
 ```
 
-Scanner le QR code avec **Expo Go** (Android/iOS) ou lancer sur émulateur.
+Expo Go peut servir a travailler sur l'interface, mais il ne charge pas le module Kotlin `ImpactEngine`.
 
-### 3. Configurer l'URL du serveur dans l'app
-
-Toucher ⚙️ en haut à droite → saisir `http://<IP_DU_PC>:8000` → tester.
-
-### Endpoints API disponibles
-
-| Méthode | URL | Description |
-|---|---|---|
-| `GET` | `/health` | État du serveur (`status`, `device`, `engine`, `arch`) |
-| `POST` | `/process` | Photo → impacts détectés + image annotée (base64) |
-| `POST` | `/diff` | Avant + après → nouveaux impacts + image annotée |
-
-**`POST /process`** — paramètres `multipart/form-data` :
-
-| Champ | Type | Défaut | Description |
-|---|---|---|---|
-| `image` | fichier | — | Photo de la cible (JPEG/PNG) |
-| `hint_cx` | float | `0.5` | Coordonnée X normalisée (0–1) du centre estimé |
-| `hint_cy` | float | `0.5` | Coordonnée Y normalisée (0–1) du centre estimé |
-
-**`POST /diff`** — mêmes champs optionnels `hint_cx`/`hint_cy`, plus :
-
-| Champ | Type | Description |
-|---|---|---|
-| `before` | fichier | Photo avant la série |
-| `after` | fichier | Photo après la série |
-
-Les réponses incluent un champ `engine` indiquant le moteur utilisé
-(`"yolo"`, `"onnx"`, ou `"morpho"`).
-
-### Sélection automatique du moteur de détection
-
-L'API sélectionne automatiquement le meilleur moteur disponible au démarrage :
-
-| Moteur | Condition | Accélération |
-|---|---|---|
-| `yolo` | Ultralytics installé + poids `best.pt` présents | GPU CUDA ou CPU |
-| `onnx` | Poids `.onnx` présents (sans PyTorch) | CPU (ONNX Runtime) |
-| `morpho` | Aucun poids trouvé | CPU (OpenCV uniquement) |
-
-### Structure de l'app mobile (`mobile/`)
-
-```
-mobile/
-  app/
-    _layout.tsx      Navigation racine
-    index.tsx        Écran d'accueil (analyser / comparer)
-    result.tsx       Résultat d'une cible (impacts + score)
-    diff.tsx         Résultat différentiel (nouveaux impacts)
-  components/
-    ImpactImage.tsx  Image annotée zoomable
-    ScoreBoard.tsx   Tableau des scores par impact
-    ServerConfig.tsx Modal de configuration de l'URL
-  services/
-    api.ts           Appels API (processImage, diffImages)
-    storage.ts       Persistance locale (URL serveur)
-  constants/
-    Colors.ts        Palette de couleurs
-```
-
----
-
-## Déploiement Docker
-
-L'API peut être lancée dans un conteneur sans installer Python ni les
-dépendances sur l'hôte. L'image est construite en **deux stages** pour
-minimiser la taille finale :
-
-1. **builder** (`python:3.13-slim`) — installe les dépendances via `uv sync --frozen` dans `/app/.venv`
-2. **runtime** (`python:3.13-slim`) — copie le venv + code source ; ajoute uniquement les librairies système nécessaires (`libglib2.0`, `libgl1`, `libgomp1`)
-
-### Construction et démarrage rapide
+### Build Android avec le moteur natif
 
 ```powershell
-# Construire l'image et démarrer le conteneur en arrière-plan
-docker compose up --build -d
-
-# Suivre les logs de démarrage
-docker compose logs -f
-
-# Vérifier que l'API répond
-curl http://localhost:8000/health
-
-# Arrêter et supprimer le conteneur
-docker compose down
+Push-Location mobile\android
+.\gradlew.bat app:compileDebugKotlin
+.\gradlew.bat app:installRelease
+Pop-Location
+adb devices
+adb shell monkey -p com.rexmi.shootscore -c android.intent.category.LAUNCHER 1
 ```
 
-### Volumes montés
+Une build Android personnalisee est obligatoire pour tester l'inference embarquee.
 
-| Chemin hôte | Chemin conteneur | Mode | Description |
-|---|---|---|---|
-| `./runs` | `/app/runs` | lecture seule | Poids YOLO (`best.pt` dans `runs/detect/models/yolo_impacts/weights/`) |
-| `./outputs` | `/app/outputs` | lecture/écriture | Résultats annotés, persistés entre les redémarrages |
+## Diagnostic
 
-> Les dossiers `outputs/api/` et `runs/detect/models/yolo_impacts/weights/`
-> sont créés vides dans l'image ; le conteneur démarre même si les volumes
-> ne sont pas montés (fallback vers le moteur morphologique).
+[mobile/app/debug-pipeline.tsx](mobile/app/debug-pipeline.tsx) appelle directement les methodes de diagnostic du module natif :
 
-### Accélération GPU (NVIDIA)
+- `debugDetectDisk` : detection du disque noir ;
+- `debugFlatten` : correction de perspective et image flat ;
+- `debugDetectImpactsFlat` : detection sur une image deja flat ;
+- `debugDetectImpactsFull` : pipeline complet sur une image source.
 
-Le `docker-compose.yml` réserve automatiquement **1 GPU NVIDIA**
-(nécessite le [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)).
-Pour fonctionner en **mode CPU uniquement**, supprimer le bloc `deploy` :
+Les parametres sont `step=disk|flatten|impacts-flat|impacts-full` et `uri=file://...`. Les resultats sont affiches dans l'ecran et dans les logs Metro/ADB.
 
-```yaml
-# Retirer dans docker-compose.yml pour désactiver le GPU :
-deploy:
-  resources:
-    reservations:
-      devices:
-        - driver: nvidia
-          count: 1
-          capabilities: [gpu]
-```
+## Limites actuelles
 
-### Healthcheck intégré
-
-Docker vérifie la santé du conteneur toutes les **30 secondes** en appelant
-`/health`. L'état est visible dans `docker ps` (colonne `STATUS`) :
-
-```
-CONTAINER ID   IMAGE                  STATUS
-abc123def456   shoot-score-api:latest Up 2 minutes (healthy)
-```
-
-### Rebuilder après modification du code
-
-```powershell
-# Reconstruire uniquement l'image (sans redémarrer les autres services)
-docker compose build api
-
-# Redémarrer avec la nouvelle image
-docker compose up -d --no-deps api
-```
-
----
-
-## Déploiement sur Raspberry Pi
-
-Le Raspberry Pi utilise une architecture **ARM64 (aarch64)**. L'image Docker
-est multi-plateforme mais doit être construite pour ARM64.
-
-> **Moteur de détection sur RPi** : PyTorch/CUDA n'est pas disponible sur ARM.
-> L'API bascule automatiquement sur **ONNX Runtime** si un fichier `.onnx` est
-> présent dans `runs/detect/models/yolo_impacts/weights/`, sinon sur la
-> **détection morphologique** (pas de poids nécessaire).
->
-> Pour exporter les poids entraînés en ONNX depuis le PC :
-> ```powershell
-> python src/export_onnx.py
-> # → runs/detect/models/yolo_impacts/weights/best.onnx
-> ```
-
----
-
-### Méthode A — Cross-build sur le PC (recommandée)
-
-Construire l'image ARM64 sur votre PC Windows, l'exporter comme fichier,
-puis la transférer sur le RPi. **La construction est faite sur votre PC,
-pas sur le RPi — beaucoup plus rapide.**
-
-#### 1. Construire l'image ARM64 sur le PC
-
-Le driver `docker` par défaut ne supporte pas les exports cross-plateforme.
-Il faut d'abord créer un builder avec le driver `docker-container` :
-
-```powershell
-# À faire une seule fois (crée un builder persistant nommé "rpi-builder")
-docker buildx create --name rpi-builder --driver docker-container --use
-
-# Construire pour ARM64 et exporter dans un fichier tar
-docker buildx build --platform linux/arm64 `
-    -t shoot-score-api:rpi `
-    --output "type=docker,dest=shoot-score-api-rpi.tar" `
-    .
-```
-
-> La première build prend ~15-30 min (émulation QEMU pour ARM64 +
-> téléchargement des dépendances). Les suivantes sont plus rapides
-> grâce au cache de couches de BuildKit.
->
-> Pour vérifier que `rpi-builder` est actif : `docker buildx ls`
-> (une `*` indique le builder courant).
-> Pour revenir au builder par défaut après : `docker buildx use default`
-
-#### 2. Transférer l'image sur le RPi
-
-```powershell
-# Remplacer <IP_RPI> par l'adresse IP de votre Raspberry Pi
-scp shoot-score-api-rpi.tar pi@<IP_RPI>:~/
-scp docker-compose.rpi.yml  pi@<IP_RPI>:~/shoot-score/
-```
-
-#### 3. Charger et démarrer sur le RPi
-
-```bash
-# Sur le Raspberry Pi (SSH)
-docker load -i ~/shoot-score-api-rpi.tar
-
-# Créer les dossiers de volumes si besoin
-mkdir -p ~/shoot-score/runs/detect/models/yolo_impacts/weights
-mkdir -p ~/shoot-score/outputs
-
-# Copier les poids ONNX (optionnel, mais recommandé)
-# scp depuis le PC : scp best.onnx pi@<IP>:~/shoot-score/runs/detect/models/yolo_impacts/weights/
-
-cd ~/shoot-score
-docker compose -f docker-compose.rpi.yml up -d
-
-# Vérifier que l'API répond
-curl http://localhost:8000/health
-```
-
----
-
-### Méthode B — Build directement sur le RPi (plus simple)
-
-Si vous préférez ne pas utiliser buildx, clonez le dépôt directement sur
-le RPi et laissez Docker construire l'image sur place. **Prévoir 30-40 min
-la première fois.**
-
-```bash
-# Sur le Raspberry Pi (SSH)
-git clone <URL_DU_REPO> ~/shoot-score
-cd ~/shoot-score
-
-# (Optionnel) Copier les poids ONNX depuis le PC
-# scp <PC>:runs/detect/models/yolo_impacts/weights/best.onnx \
-#     runs/detect/models/yolo_impacts/weights/
-
-docker compose -f docker-compose.rpi.yml up --build -d
-docker compose -f docker-compose.rpi.yml logs -f
-```
-
----
-
-### Configurer l'app mobile pour pointer vers le RPi
-
-Dans l'application mobile, toucher ⚙️ → saisir `http://<IP_RPI>:8000`.
-
-Pour connaître l'IP du RPi :
-
-```bash
-hostname -I   # sur le RPi
-```
-
----
-
-## Workflow complet (première utilisation)
-
-```powershell
-# 1. Installer les dépendances
-uv sync
-
-# 2. Labeliser les images (une fois)
-python src/label_impacts.py outputs/flatten/ --skip-done
-
-# 3. Préparer le dataset YOLO
-python src/prepare_yolo_dataset.py outputs/flatten
-
-# 4. Entraîner le modèle (sur GPU de préférence)
-python src/train_yolo.py --epochs 200
-
-# 5. Utiliser le pipeline sur de nouvelles photos
-python src/pipeline.py data/raw/ --out outputs --show
-
-# 6. Comparer deux séries de tir
-python src/diff_shots.py data/raw/serie1.jpg data/raw/serie2.jpg --show
-```
-
----
-
-## Géométrie de la cible
-
-La cible utilisée est une cible standard type pistolet 25m.
-
-| Zone | Distance au centre | Score |
-|---|---|---|
-| Disque noir zone 10 | 0 – 25 mm | 10 |
-| Zone 9 | 25 – 50 mm | 9 |
-| Zone 8 | 50 – 75 mm | 8 |
-| Zone 7 (bord disque) | 75 – 100 mm | 7 |
-| Zone 6 | 100 – 125 mm | 6 |
-| Zone 5 | 125 – 150 mm | 5 |
-| Zone 4 | 150 – 175 mm | 4 |
-| Zone 3 | 175 – 200 mm | 3 |
-| Zone 2 | 200 – 225 mm | 2 |
-| Zone 1 | 225 – 250 mm | 1 |
-
-Image de sortie : **1056 × 1056 px**, ≈ **0.523 mm/px**, disque noir ≈ 191 px de rayon.
+- L'inference embarquee est disponible sur Android uniquement.
+- Le modele charge par Android est l'asset ONNX ; modifier un checkpoint Python ne modifie pas l'application tant que l'export et la reconstruction Android ne sont pas faits.
+- Il n'existe pas encore de suite de tests end-to-end couvrant camera, inference native, comparaison et persistance.
+- `result.tsx` est un ecran ancien ; le parcours courant passe par `diff.tsx`.
