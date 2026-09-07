@@ -17,7 +17,7 @@ CLASS_MAP = {
 
 
 def collect_images(path: Path) -> list[Path]:
-is_file():
+    if path.is_file():
         return [path]
 
     return sorted(
