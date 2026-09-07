@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 AXIS_NAMES = ("top", "left", "bottom", "right")
-PATCH_SIZE = 128
+PATCH_SIZE = 256
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,8 @@ def expected_axis_points(
     height: int,
     screen_aspect: float = 9 / 16,
     frame_ratio: float = 0.82,
-    target_radius_ratio: float = 0.46,
+    # target_radius_ratio: float = 0.46,
+    target_radius_ratio: float = 0.91,
 ) -> dict[str, Point]:
     """Return expected top/left/bottom/right marker coordinates in source pixels."""
     origin_x, origin_y, crop_w, crop_h = viewfinder_crop(

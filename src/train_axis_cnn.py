@@ -89,12 +89,24 @@ def train_position(position: str, args: argparse.Namespace, device: torch.device
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=0)
     val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
     model = AxisMarkerCNN().to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
+
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=1e-3,
+        weight_decay=1e-4,
+    )
+
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=args.epochs,
+    )
+
     best = float("inf")
     output = args.out / f"axis_marker_{position}.pt"
     for epoch in range(1, args.epochs + 1):
         train_loss, train_acc = run_epoch(model, train_loader, optimizer, device, True)
         val_loss, val_acc = run_epoch(model, val_loader, optimizer, device, False)
+        scheduler.step()
         if val_loss < best:
             best = val_loss
             output.parent.mkdir(parents=True, exist_ok=True)

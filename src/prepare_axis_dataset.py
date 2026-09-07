@@ -60,6 +60,16 @@ def prepare_one(
             present = 1
             dx = (label.x - expected_point.x) / (PATCH_SIZE / 2)
             dy = (label.y - expected_point.y) / (PATCH_SIZE / 2)
+            distance = np.hypot(
+                label.x - expected_point.x,
+                label.y - expected_point.y
+            )
+
+            print(position, round(distance))
+            if distance > 150:
+                print(f"[OUTLIER] {image_path.name} {position} {distance:.1f}")
+
+        
         stem = f"{image_path.stem}_{position}"
         image_out = position_dir / f"{stem}.png"
         label_out = position_dir / f"{stem}.json"
