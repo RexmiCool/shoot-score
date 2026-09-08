@@ -26,23 +26,44 @@ DEFAULT_EPOCHS = 200
 DEFAULT_IMGSZ = 1056  # résolution d'entrainement (1056 ou 1024)
 DEFAULT_BATCH = 8  # à réduire si OOM GPU (4 si 8Go VRAM)
 DEFAULT_OUT = "models"  # dossier de sortie des poids
-DEFAULT_AUG_PRESET = "robust"
+DEFAULT_AUG_PRESET = "auto"
 
 
-def _augmentation_config(preset: str) -> dict:
+def _dataset_role(data_path: Path) -> str:
+    """Infer a coarse dataset role from its path.
+
+    Args:
+        data_path: Path to the YOLO dataset YAML.
+
+    Returns:
+        ``"axis"`` for axis-marker datasets, ``"impacts"`` otherwise.
+    """
+    parts = [p.lower() for p in data_path.parts]
+    joined = "/".join(parts)
+    if "axis_yolo" in joined or "axis" in joined:
+        return "axis"
+    return "impacts"
+
+
+def _augmentation_config(preset: str, data_role: str) -> tuple[str, dict]:
     """Retourne la configuration d'augmentation YOLO selon un preset.
 
     Args:
-        preset: Nom du preset d'augmentation ("baseline" ou "robust").
+        preset: Nom du preset d'augmentation.
+        data_role: Role du dataset (``"axis"`` ou ``"impacts"``).
 
     Returns:
-        Dictionnaire prêt à être passé à ``yolo.train(**kwargs)``.
+        Tuple ``(preset_resolu, kwargs_aug)`` prêt pour ``yolo.train(**kwargs)``.
 
     Raises:
         ValueError: Si le preset est inconnu.
     """
-    if preset == "baseline":
-        return {
+    resolved = preset
+    if preset == "auto":
+        resolved = "axis_markers" if data_role == "axis" else "robust"
+
+    if resolved == "baseline":
+        return resolved, {
             "degrees": 180.0,
             "fliplr": 0.5,
             "flipud": 0.5,
@@ -56,8 +77,8 @@ def _augmentation_config(preset: str) -> dict:
             "copy_paste": 0.1,
         }
 
-    if preset == "robust":
-        return {
+    if resolved == "robust":
+        return resolved, {
             # Géométrie: cas caméra inclinée, décentrée, bord cadre.
             "degrees": 180.0,
             "fliplr": 0.5,
@@ -76,6 +97,27 @@ def _augmentation_config(preset: str) -> dict:
             "mixup": 0.15,
             "copy_paste": 0.2,
             "erasing": 0.25,
+        }
+
+    if resolved == "axis_markers":
+        # Axis classes are orientation-dependent (top/left/bottom/right).
+        # Do not rotate/flip, otherwise labels become semantically wrong.
+        return resolved, {
+            "degrees": 0.0,
+            "fliplr": 0.0,
+            "flipud": 0.0,
+            "translate": 0.08,
+            "scale": 0.20,
+            "shear": 2.0,
+            "perspective": 0.0003,
+            "hsv_h": 0.02,
+            "hsv_s": 0.5,
+            "hsv_v": 0.35,
+            "mosaic": 0.3,
+            "close_mosaic": 10,
+            "mixup": 0.0,
+            "copy_paste": 0.0,
+            "erasing": 0.1,
         }
 
     raise ValueError(f"Preset d'augmentation inconnu: {preset}")
@@ -127,17 +169,25 @@ def train(
         print("  Lance d'abord : python src/prepare_yolo_dataset.py outputs/flatten")
         sys.exit(1)
 
+    data_role = _dataset_role(data_path)
+    resolved_preset, aug_cfg = _augmentation_config(aug_preset, data_role)
+
     print(f"\n{'=' * 60}")
     print(f"[TRAIN] Modèle    : {model}")
     print(f"[TRAIN] Dataset   : {data_path}")
+    print(f"[TRAIN] Rôle data : {data_role}")
     print(f"[TRAIN] Epochs    : {epochs}")
     print(f"[TRAIN] Image sz  : {imgsz}px")
     print(f"[TRAIN] Batch     : {batch}")
-    print(f"[TRAIN] Augment   : {aug_preset}")
+    print(f"[TRAIN] Augment   : {resolved_preset} (arg={aug_preset})")
     print(f"{'=' * 60}\n")
 
+    if data_role == "axis" and resolved_preset in {"baseline", "robust"}:
+        print("[WARN] Les presets baseline/robust appliquent rotations/flips.")
+        print("[WARN] Pour top/left/bottom/right cela casse la sémantique des classes.")
+        print("[WARN] Recommandé: --aug-preset axis_markers (ou auto).")
+
     yolo = YOLO(model)  # télécharge automatiquement si absent
-    aug_cfg = _augmentation_config(aug_preset)
 
     yolo.train(
         data=str(data_path.resolve()),
@@ -211,8 +261,8 @@ if __name__ == "__main__":
     ap.add_argument(
         "--aug-preset",
         default=DEFAULT_AUG_PRESET,
-        choices=["baseline", "robust"],
-        help="Preset d'augmentation (défaut: robust)",
+        choices=["auto", "axis_markers", "baseline", "robust"],
+        help="Preset d'augmentation (défaut: auto)",
     )
     args = ap.parse_args()
 
