@@ -22,16 +22,6 @@ import cv2
 import numpy as np
 
 from axis_marker_common import AXIS_NAMES, expected_axis_points
-import torch
-
-from axis_marker_common import (
-    AXIS_NAMES,
-    PATCH_SIZE,
-    crop_patch,
-    expected_axis_points,
-)
-
-from models.axis_marker_cnn import AxisMarkerCNN
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
 COLORS = [(0, 220, 255), (0, 255, 100), (255, 180, 0), (255, 80, 180)]
@@ -52,72 +42,11 @@ class AxisLabeler:
         self.expected = expected_axis_points(w, h, screen_aspect, frame_ratio)
         self._load()
         if all(p is None for p in self.points):
-            self._predict_with_cnn()
+            self._auto_detect()
         self.window = "Labelisation des quatre 1"
         cv2.namedWindow(self.window, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(self.window, int(w * self.scale), int(h * self.scale))
         cv2.setMouseCallback(self.window, self._on_mouse)
-
-    def _predict_with_cnn(self) -> None:
-        gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
-
-        models_dir = Path("models/axis_markers")
-
-        for i, position in enumerate(AXIS_NAMES):
-
-            weights = models_dir / f"axis_marker_{position}.pt"
-
-            if not weights.exists():
-                print(f"[WARN] modele absent: {weights}")
-                continue
-
-            model = AxisMarkerCNN()
-            model.load_state_dict(
-                torch.load(weights, map_location="cpu")
-            )
-            model.eval()
-
-            expected = self.expected[position]
-
-            patch = crop_patch(
-                gray,
-                expected.x,
-                expected.y,
-                PATCH_SIZE,
-            )
-
-            tensor = (
-                torch.from_numpy(
-                    patch.astype(np.float32) / 255.0
-                )
-                .unsqueeze(0)
-                .unsqueeze(0)
-            )
-
-            with torch.no_grad():
-                output = model(tensor)[0]
-
-            present = torch.sigmoid(output[0]).item()
-
-            if present < 0.5:
-                continue
-
-            dx = output[1].item()
-            dy = output[2].item()
-
-            px = expected.x + dx * (PATCH_SIZE / 2)
-            py = expected.y + dy * (PATCH_SIZE / 2)
-
-            self.points[i] = {
-                "x": round(px, 2),
-                "y": round(py, 2),
-            }
-
-            print(
-                f"[CNN] {position}: "
-                f"present={present:.3f} "
-                f"dx={dx:.3f} dy={dy:.3f}"
-            )
 
     def _auto_detect(self) -> None:
         gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)

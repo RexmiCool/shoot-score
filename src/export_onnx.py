@@ -14,7 +14,7 @@ import argparse
 import shutil
 from pathlib import Path
 
-DEFAULT_WEIGHTS = "runs/detect/models/yolo_impacts/weights/best.pt"
+DEFAULT_WEIGHTS = "models/yolo_impacts/weights/best.pt"
 DEFAULT_IMGSZ = 1056
 DEFAULT_MOBILE_ASSET = Path("mobile/android/app/src/main/assets/impact_yolo.onnx")
 

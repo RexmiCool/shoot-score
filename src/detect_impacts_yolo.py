@@ -35,7 +35,7 @@ except Exception:
     _YOLO = None  # type: ignore[assignment,misc]
     _HAS_ULTRALYTICS = False
 # ── Paramètres ────────────────────────────────────────────────────────────────
-DEFAULT_WEIGHTS = "runs/detect/models/yolo_impacts/weights/best.pt"
+DEFAULT_WEIGHTS = "models/yolo_impacts/weights/best.pt"
 DEFAULT_CONF = 0.25  # seuil de confiance minimum
 DEFAULT_IOU = 0.4  # seuil IoU pour NMS (évite les doublons)
 

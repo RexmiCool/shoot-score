@@ -36,7 +36,7 @@ from flatten_markers import flatten_with_markers, save_flatten
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
 DEFAULT_AXIS_WEIGHTS = "models/axis_yolo/weights/best.pt"
-DEFAULT_IMPACT_WEIGHTS = "runs/detect/models/yolo_impacts/weights/best.pt"
+DEFAULT_IMPACT_WEIGHTS = "models/yolo_impacts/weights/best.pt"
 DEFAULT_OUT = "outputs"
 
 
