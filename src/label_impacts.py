@@ -34,10 +34,17 @@ DISPLAY_MAX = 1056  # taille max d'affichage (la flat est déjà 1056×1056)
 
 
 class Labeler:
-    def __init__(self, flat_path: Path):
+    def __init__(
+        self,
+        flat_path: Path,
+        accepted_dir: Path | None = None,
+        rejected_dir: Path | None = None,
+    ):
         self.flat_path = flat_path
         self.stem = flat_path.stem.removesuffix("_flat")
         self.json_path = flat_path.parent / f"{self.stem}_labels.json"
+        self.accepted_dir = accepted_dir
+        self.rejected_dir = rejected_dir
 
         # Utiliser *_rings.jpg s'il existe (meilleur contexte visuel)
         rings_path = flat_path.parent / f"{self.stem}_rings.jpg"
@@ -132,6 +139,38 @@ class Labeler:
 
     # ── Boucle principale ──────────────────────────────────────────────────────
 
+    def move_to_status(self, status: str) -> str:
+        """Move the flat image and JSON label to the accepted or rejected folder."""
+        if status == "accept" and self.accepted_dir is not None:
+            self.accepted_dir.mkdir(parents=True, exist_ok=True)
+            image_dest = self.accepted_dir / self.flat_path.name
+            json_dest = self.accepted_dir / self.json_path.name
+            if image_dest.exists():
+                image_dest.unlink()
+            if self.json_path.exists():
+                if json_dest.exists():
+                    json_dest.unlink()
+                self.json_path.replace(json_dest)
+            self.flat_path.replace(image_dest)
+            print(f"[MOVE] {self.flat_path.name} -> {image_dest}")
+            print(f"[MOVE] {self.json_path.name} -> {json_dest}")
+            return "next"
+        if status == "reject" and self.rejected_dir is not None:
+            self.rejected_dir.mkdir(parents=True, exist_ok=True)
+            image_dest = self.rejected_dir / self.flat_path.name
+            json_dest = self.rejected_dir / self.json_path.name
+            if image_dest.exists():
+                image_dest.unlink()
+            if self.json_path.exists():
+                if json_dest.exists():
+                    json_dest.unlink()
+                self.json_path.replace(json_dest)
+            self.flat_path.replace(image_dest)
+            print(f"[REJECT] {self.flat_path.name} -> {image_dest}")
+            print(f"[REJECT] {self.json_path.name} -> {json_dest}")
+            return "next"
+        return "stay"
+
     def run(self) -> str:
         """
         Lance la boucle interactive. Retourne 'next', 'prev' ou 'quit'
@@ -139,24 +178,32 @@ class Labeler:
         """
         print(
             f"\n[{self.flat_path.name}] Clic G=ajouter  Clic D=suppr  "
-            "S=save  Z=annuler  N=suivante  P=précédente  Q=quitter\n"
+            "A=accepter  X=rejetter  S=save  Z=annuler  N=suivante  P=précédente  Q=quitter\n"
         )
         action = "next"
         while True:
             cv2.imshow(self.win, self._render())
             key = cv2.waitKey(30) & 0xFF
 
-            if key in (ord("q"), ord("Q"), 27):  # Q ou Échap → quitter
+            if key in (ord("q"), ord("Q"), 27):
                 self._save()
                 action = "quit"
                 break
-            elif key in (ord("n"), ord("N")):  # N → image suivante
+            elif key in (ord("n"), ord("N")):
                 self._save()
                 action = "next"
                 break
-            elif key in (ord("p"), ord("P")):  # P → image précédente
+            elif key in (ord("p"), ord("P")):
                 self._save()
                 action = "prev"
+                break
+            elif key in (ord("a"), ord("A")):
+                self._save()
+                action = "accept"
+                break
+            elif key in (ord("x"), ord("X")):
+                self._save()
+                action = "reject"
                 break
             elif key in (ord("s"), ord("S")):
                 self._save()
@@ -205,6 +252,8 @@ if __name__ == "__main__":
         action="store_true",
         help="Ignorer les images déjà labélisées (*_labels.json existant)",
     )
+    ap.add_argument("--accepted-dir", type=Path, default=None, help="Dossier de destination après validation manuelle")
+    ap.add_argument("--rejected-dir", type=Path, default=None, help="Dossier de destination si l'image est rejetée")
     args = ap.parse_args()
 
     root = Path(args.path)
@@ -230,15 +279,34 @@ if __name__ == "__main__":
 
     idx = 0
     while 0 <= idx < len(images):
+        image_path = images[idx]
         print(f"\n--- Image {idx + 1}/{len(images)} ----------------------------")
         try:
-            labeler = Labeler(images[idx])
+            labeler = Labeler(
+                image_path,
+                accepted_dir=args.accepted_dir,
+                rejected_dir=args.rejected_dir,
+            )
         except FileNotFoundError as e:
             print(f"[SKIP] {e}")
-            idx += 1
+            images.pop(idx)
+            if idx >= len(images):
+                idx = max(0, len(images) - 1)
             continue
 
         action = labeler.run()
+        if action == "accept":
+            labeler.move_to_status("accept")
+            images.pop(idx)
+            if idx >= len(images):
+                idx = max(0, len(images) - 1)
+            continue
+        if action == "reject":
+            labeler.move_to_status("reject")
+            images.pop(idx)
+            if idx >= len(images):
+                idx = max(0, len(images) - 1)
+            continue
         if action == "quit":
             print("Labélisation interrompue.")
             break

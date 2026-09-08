@@ -29,9 +29,18 @@ FONT = cv2.FONT_HERSHEY_SIMPLEX
 
 
 class AxisLabeler:
-    def __init__(self, image_path: Path, screen_aspect: float, frame_ratio: float):
+    def __init__(
+        self,
+        image_path: Path,
+        screen_aspect: float,
+        frame_ratio: float,
+        accepted_dir: Path | None = None,
+        rejected_dir: Path | None = None,
+    ):
         self.image_path = image_path
         self.label_path = image_path.with_name(f"{image_path.stem}_axis_labels.json")
+        self.accepted_dir = accepted_dir
+        self.rejected_dir = rejected_dir
         self.image = cv2.imread(str(image_path))
         if self.image is None:
             raise FileNotFoundError(image_path)
@@ -172,6 +181,38 @@ class AxisLabeler:
             image = cv2.resize(image, (int(image.shape[1] * self.scale), int(image.shape[0] * self.scale)), interpolation=cv2.INTER_AREA)
         return image
 
+    def move_to_status(self, status: str) -> str:
+        """Move the current image and its JSON label to accepted or rejected."""
+        if status == "accept" and self.accepted_dir is not None:
+            self.accepted_dir.mkdir(parents=True, exist_ok=True)
+            destination = self.accepted_dir / self.image_path.name
+            label_destination = self.accepted_dir / self.label_path.name
+            if destination.exists():
+                destination.unlink()
+            if self.label_path.exists():
+                if label_destination.exists():
+                    label_destination.unlink()
+                self.label_path.replace(label_destination)
+            self.image_path.replace(destination)
+            print(f"[MOVE] {self.image_path.name} -> {destination}")
+            print(f"[MOVE] {self.label_path.name} -> {label_destination}")
+            return "next"
+        if status == "reject" and self.rejected_dir is not None:
+            self.rejected_dir.mkdir(parents=True, exist_ok=True)
+            destination = self.rejected_dir / self.image_path.name
+            label_destination = self.rejected_dir / self.label_path.name
+            if destination.exists():
+                destination.unlink()
+            if self.label_path.exists():
+                if label_destination.exists():
+                    label_destination.unlink()
+                self.label_path.replace(label_destination)
+            self.image_path.replace(destination)
+            print(f"[REJECT] {self.image_path.name} -> {destination}")
+            print(f"[REJECT] {self.label_path.name} -> {label_destination}")
+            return "next"
+        return "stay"
+
     def run(self) -> str:
         while True:
             cv2.imshow(self.window, self.render())
@@ -184,6 +225,14 @@ class AxisLabeler:
                 self.save()
             elif key in (ord("r"), ord("R")):
                 self.points = [None] * 4
+            elif key in (ord("x"), ord("X")):
+                self.save()
+                cv2.destroyAllWindows()
+                return "reject"
+            elif key in (ord("a"), ord("A")):
+                self.save()
+                cv2.destroyAllWindows()
+                return "accept"
             elif key in (ord("n"), ord("N")):
                 self.save()
                 cv2.destroyAllWindows()
@@ -208,14 +257,36 @@ def main() -> None:
     parser.add_argument("--skip-done", action="store_true")
     parser.add_argument("--screen-aspect", type=float, default=9 / 16, help="largeur/hauteur du telephone")
     parser.add_argument("--frame-ratio", type=float, default=0.82)
+    parser.add_argument("--accepted-dir", type=Path, default=None, help="Dossier de destination après la validation manuelle")
+    parser.add_argument("--rejected-dir", type=Path, default=None, help="Dossier de destination si l'image est rejetée")
     args = parser.parse_args()
     images = collect_images(args.path)
     if args.skip_done:
         images = [p for p in images if not p.with_name(f"{p.stem}_axis_labels.json").exists()]
     index = 0
     while 0 <= index < len(images):
-        print(f"[{index + 1}/{len(images)}] {images[index]}")
-        action = AxisLabeler(images[index], args.screen_aspect, args.frame_ratio).run()
+        image_path = images[index]
+        print(f"[{index + 1}/{len(images)}] {image_path}")
+        labeler = AxisLabeler(
+            image_path,
+            args.screen_aspect,
+            args.frame_ratio,
+            accepted_dir=args.accepted_dir,
+            rejected_dir=args.rejected_dir,
+        )
+        action = labeler.run()
+        if action == "accept":
+            labeler.move_to_status("accept")
+            images.pop(index)
+            if index >= len(images):
+                index = max(0, len(images) - 1)
+            continue
+        elif action == "reject":
+            labeler.move_to_status("reject")
+            images.pop(index)
+            if index >= len(images):
+                index = max(0, len(images) - 1)
+            continue
         if action == "quit":
             break
         index += 1 if action == "next" else -1
