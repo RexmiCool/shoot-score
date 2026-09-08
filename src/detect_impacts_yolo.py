@@ -233,9 +233,12 @@ def detect_impacts_yolo(
 
     # ── Sélection du moteur d'inférence ────────────────────────────────────
     w_path = Path(weights)
-    onnx_path = w_path.with_suffix(".onnx")
+    onnx_path = w_path if w_path.suffix.lower() == ".onnx" else w_path.with_suffix(".onnx")
 
-    if _HAS_ULTRALYTICS and w_path.exists():
+    if w_path.suffix.lower() == ".onnx" and w_path.exists():
+        _engine = "onnx"
+        model_label = str(w_path)
+    elif _HAS_ULTRALYTICS and w_path.exists():
         _engine = "yolo"
         model_label = str(w_path)
     elif onnx_path.exists():

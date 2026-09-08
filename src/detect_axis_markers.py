@@ -195,8 +195,12 @@ def detect_axis_markers(
     """
     image_path = Path(image_path)
     w_path = Path(weights)
-    onnx_path = w_path.with_suffix(".onnx")
+    onnx_path = w_path if w_path.suffix.lower() == ".onnx" else w_path.with_suffix(".onnx")
 
+    # Force native onnxruntime path for .onnx weights to avoid ultralytics
+    # selecting CUDAExecutionProvider on machines without full CUDA ORT deps.
+    if w_path.suffix.lower() == ".onnx" and w_path.exists():
+        return _detect_onnx(image_path, w_path, conf_thr, iou_thr, imgsz)
     if _HAS_ULTRALYTICS and w_path.exists():
         return _detect_ultralytics(image_path, w_path, conf_thr, iou_thr, imgsz, device)
     if onnx_path.exists():
