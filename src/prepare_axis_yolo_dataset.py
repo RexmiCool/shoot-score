@@ -120,8 +120,8 @@ def convert_image(
 
 
 def write_yaml(output_root: Path):
-    yaml_text = """
-path: .
+    yaml_text = f"""
+path: {output_root.as_posix()}
 
 train: images/train
 val: images/val
