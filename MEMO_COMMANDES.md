@@ -146,3 +146,169 @@ step=impacts-full
 ```
 
 Le parametre `uri` doit pointer vers une image locale `file://...`. Les methodes appelees sont `debugDetectDisk`, `debugFlatten`, `debugDetectImpactsFlat` et `debugDetectImpactsFull` dans `ImpactEngineModule.kt`.
+
+
+
+
+##### NEW #####
+Parfait. Voici le mode d’emploi complet de A a Z sur l’etat actuel du projet, avec le nouveau pipeline 4 reperes.
+
+0. Prerequis
+
+Cloner le repo parent puis initialiser le submodule mobile.
+Avoir Python 3.10+ et Node/Android SDK.
+Commandes:
+git submodule update --init --recursive
+uv sync
+
+Si tu n’utilises pas uv:
+pip install -e .
+
+1. Labeliser les 4 reperes "1" (top, left, bottom, right)
+Script:
+label_axis_markers.py
+
+Commande:
+python label_axis_markers.py data/raw
+
+Ce que ca produit:
+
+Un fichier voisin de chaque image: nom_image_axis_labels.json
+Raccourcis utiles:
+
+clic gauche: poser/remplacer le point selectionne
+clic droit: supprimer le point le plus proche
+1/2/3/4: choisir top/left/bottom/right
+S: save
+N/P: suivante/precedente
+Q: quitter
+2. Construire le dataset YOLO des reperes
+Script:
+prepare_axis_yolo_dataset.py
+
+Commande:
+python prepare_axis_yolo_dataset.py data/raw --out data/axis_yolo --val-ratio 0.2 --box-size 48
+
+Ce que ca produit:
+
+data/axis_yolo/images/train|val
+data/axis_yolo/labels/train|val
+data/axis_yolo/dataset.yaml
+3. Entrainer le modele YOLO des reperes
+Script:
+train_yolo.py
+
+Important:
+
+Le script ecrit sous nom yolo_impacts, donc separe bien les dossiers de sortie pour ne pas ecraser les trainings.
+Commande recommandee pour les reperes:
+python train_yolo.py --data data/axis_yolo/dataset.yaml --model yolo11n.pt --epochs 200 --imgsz 1056 --batch 8 --out models_axis
+
+Poids obtenus:
+
+models_axis/yolo_impacts/weights/best.pt
+4. Exporter le modele des reperes en ONNX pour Android
+Script:
+export_axis_yolo_onnx.py
+
+Commande:
+python export_axis_yolo_onnx.py --weights models_axis/yolo_impacts/weights/best.pt
+
+Asset cible:
+
+assets -> axis_markers_yolo.onnx
+5. Preparer les images flat pour le dataset impacts
+Tu as 2 options:
+
+Si tu as deja des images flat annotees dans outputs, utilise-les.
+Sinon genere-les avec le pipeline marker:
+python pipeline_markers.py data/raw --out outputs --debug
+Pipeline:
+pipeline_markers.py
+
+detection 4 reperes
+homographie
+flat 1056
+YOLO impacts
+6. Labeliser les impacts
+Script:
+label_impacts.py
+
+Commande:
+python label_impacts.py outputs --skip-done
+
+Ce que ca produit:
+
+nom_image_labels.json a cote de chaque image flat
+Raccourcis:
+
+clic gauche: ajouter impact
+clic droit: supprimer impact proche
+Z: undo
+S: save
+N/P: suivante/precedente
+Q: quitter
+7. Construire le dataset YOLO des impacts
+Script:
+prepare_yolo_dataset.py
+
+Commande:
+python prepare_yolo_dataset.py outputs --out data/yolo --val-ratio 0.2
+
+Ce que ca produit:
+
+data/yolo/dataset.yaml + images/labels train/val
+8. Entrainer le modele YOLO impacts
+Script:
+train_yolo.py
+
+Commande recommandee:
+python train_yolo.py --data data/yolo/dataset.yaml --model yolo11n.pt --epochs 200 --imgsz 1056 --batch 8 --out models
+
+Poids obtenus:
+
+models/yolo_impacts/weights/best.pt
+9. Exporter le modele impacts en ONNX pour Android
+Script:
+export_onnx.py
+
+Commande:
+python export_onnx.py --weights models/yolo_impacts/weights/best.pt
+
+Asset cible:
+
+assets -> impact_yolo.onnx
+10. Tester le pipeline desktop de bout en bout
+Commande:
+python pipeline_markers.py data/raw/photo.jpg --axis-weights models_axis/yolo_impacts/weights/best.pt --impact-weights models/yolo_impacts/weights/best.pt --show
+
+11. Deployer l’application sur telephone Android
+
+Activer options dev + debogage USB sur le telephone.
+
+Brancher en USB.
+
+Verifier:
+adb devices
+
+Build/install Android:
+cd mobile/android
+gradlew.bat app:compileDebugKotlin
+gradlew.bat app:installDebug
+
+Lancer l’app:
+adb shell monkey -p com.rexmi.shootscore -c android.intent.category.LAUNCHER 1
+
+Pour dev JS:
+cd mobile
+npm install
+npx expo start
+
+Comme tu utilises un module natif, il faut une vraie build Android (pas Expo Go).
+
+12. Ce qui est maintenant archive
+
+Legacy disque noir, anneaux detectes, patch-CNN, heatmap:
+archive_2026-09-marker-migration
+Assets mobile legacy:
+archive_2026-09-marker-migration
