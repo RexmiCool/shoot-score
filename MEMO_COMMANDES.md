@@ -202,7 +202,7 @@ Important:
 
 Le script ecrit sous nom yolo_impacts, donc separe bien les dossiers de sortie pour ne pas ecraser les trainings.
 Commande recommandee pour les reperes:
-python train_yolo.py --data data/axis_yolo/dataset.yaml --model yolo11n.pt --epochs 200 --imgsz 1056 --batch 8 --out models_axis --aug-preset axis_markers
+python train_yolo.py --data data/axis_yolo/dataset.yaml --model yolo11n.pt --epochs 200 --imgsz 1056 --batch 8 --out models_axis --aug-preset axis_markers --training-profile high_performance
 
 Poids obtenus:
 
@@ -312,3 +312,39 @@ Legacy disque noir, anneaux detectes, patch-CNN, heatmap:
 archive_2026-09-marker-migration
 Assets mobile legacy:
 archive_2026-09-marker-migration
+
+13. Booster drastiquement la performance YOLO (meme si entrainement long)
+
+Objectif: pousser le mAP au maximum, quitte a augmenter fortement le temps de calcul.
+
+Points les plus impactants (ordre recommande):
+
+- Qualite labels > quantite: relire 100% du val et corriger les labels ambigus.
+- Plus de data difficile: flou, faible lumiere, angle fort, reflets, zoom variable.
+- Hard negatives: ajouter des images sans cible exploitable et sans impact.
+- Pas de rotation/flip pour les reperes axis: top/left/bottom/right sont des classes orientees.
+- Modele plus gros: preferer yolo11l.pt ou yolo11x.pt si GPU suffisant.
+- Resolution plus haute: essayer imgsz 1280 puis 1536.
+- Entrainement plus long: 300 a 600 epochs, patience elevee.
+- Selection par validation stricte: conserver seulement les runs qui generalisent sur un lot hors entrainement.
+- Ensemble de modeles: combiner 2 a 3 meilleurs checkpoints pour inference finale.
+
+Exemple commande reperes (qualite max):
+
+python train_yolo.py --data data/axis_yolo/dataset.yaml --model yolo11x.pt --epochs 450 --imgsz 1280 --batch 4 --out models_axis --aug-preset axis_markers --training-profile high_performance
+
+Exemple commande impacts (qualite max):
+
+python train_yolo.py --data data/yolo/dataset.yaml --model yolo11x.pt --epochs 450 --imgsz 1280 --batch 4 --out models --aug-preset robust --training-profile high_performance
+
+Options avancees si tu passes par la CLI Ultralytics directe:
+
+```powershell
+yolo detect train data=data/axis_yolo/dataset.yaml model=yolo11x.pt imgsz=1280 epochs=450 batch=4 optimizer=AdamW cos_lr=True close_mosaic=20 patience=150 cache=True
+```
+
+Anti-overfitting (a activer progressivement):
+
+- reduire les augmentations agressives si le val diverge;
+- augmenter le dataset reel avant d'augmenter encore les epochs;
+- conserver un split val fixe pour comparer les runs de maniere fiable.

@@ -27,6 +27,8 @@ DEFAULT_IMGSZ = 1056  # résolution d'entrainement (1056 ou 1024)
 DEFAULT_BATCH = 8  # à réduire si OOM GPU (4 si 8Go VRAM)
 DEFAULT_OUT = "models"  # dossier de sortie des poids
 DEFAULT_AUG_PRESET = "auto"
+DEFAULT_PATIENCE = 50
+DEFAULT_TRAINING_PROFILE = "standard"
 
 
 def _dataset_role(data_path: Path) -> str:
@@ -123,6 +125,65 @@ def _augmentation_config(preset: str, data_role: str) -> tuple[str, dict]:
     raise ValueError(f"Preset d'augmentation inconnu: {preset}")
 
 
+def _training_profile_config(
+    profile: str,
+    epochs: int,
+    imgsz: int,
+    batch: int,
+    patience: int,
+) -> tuple[str, dict]:
+    """Resolve training profile into concrete training kwargs.
+
+    Args:
+        profile: Training profile name.
+        epochs: Requested epoch count.
+        imgsz: Requested image size.
+        batch: Requested batch size.
+        patience: Requested early-stopping patience.
+
+    Returns:
+        Tuple ``(resolved_profile, kwargs)`` with profile-specific YOLO
+        training arguments.
+
+    Raises:
+        ValueError: If profile is unknown.
+    """
+    if profile == "standard":
+        return profile, {
+            "epochs": epochs,
+            "imgsz": imgsz,
+            "batch": batch,
+            "patience": patience,
+            "optimizer": "AdamW",
+            "lr0": 0.001,
+            "lrf": 0.01,
+            "warmup_epochs": 5,
+            "cos_lr": False,
+            "cache": False,
+            "multi_scale": False,
+        }
+
+    if profile == "high_performance":
+        return profile, {
+            "epochs": max(epochs, 450),
+            "imgsz": max(imgsz, 1280),
+            "batch": batch,
+            "patience": max(patience, 150),
+            "optimizer": "AdamW",
+            "lr0": 0.001,
+            "lrf": 0.01,
+            "warmup_epochs": 8,
+            "cos_lr": True,
+            "cache": True,
+            "multi_scale": True,
+            "close_mosaic": 20,
+            "weight_decay": 0.0007,
+            "save_period": 10,
+        }
+
+    raise ValueError(f"Profil d'entrainement inconnu: {profile}")
+
+
 def _auto_device() -> str:
     """Retourne '0' si un GPU CUDA est disponible, 'cpu' sinon."""
     try:
@@ -145,6 +206,8 @@ def train(
     out_dir: str = DEFAULT_OUT,
     device: str = DEFAULT_DEVICE,
     aug_preset: str = DEFAULT_AUG_PRESET,
+    patience: int = DEFAULT_PATIENCE,
+    training_profile: str = DEFAULT_TRAINING_PROFILE,
 ) -> Path:
     """Lance l'entraînement et retourne le path du meilleur modèle.
 
@@ -157,6 +220,8 @@ def train(
         out_dir: Dossier projet Ultralytics.
         device: Device Ultralytics (``0`` ou ``cpu``).
         aug_preset: Preset d'augmentation (``baseline`` ou ``robust``).
+        patience: Patience pour l'early stopping.
+        training_profile: Profil global d'entrainement.
 
     Returns:
         Path vers ``best.pt``.
@@ -171,14 +236,28 @@ def train(
 
     data_role = _dataset_role(data_path)
     resolved_preset, aug_cfg = _augmentation_config(aug_preset, data_role)
+    resolved_profile, profile_cfg = _training_profile_config(
+        training_profile,
+        epochs,
+        imgsz,
+        batch,
+        patience,
+    )
+
+    final_epochs = int(profile_cfg["epochs"])
+    final_imgsz = int(profile_cfg["imgsz"])
+    final_batch = int(profile_cfg["batch"])
+    final_patience = int(profile_cfg["patience"])
 
     print(f"\n{'=' * 60}")
     print(f"[TRAIN] Modèle    : {model}")
     print(f"[TRAIN] Dataset   : {data_path}")
     print(f"[TRAIN] Rôle data : {data_role}")
-    print(f"[TRAIN] Epochs    : {epochs}")
-    print(f"[TRAIN] Image sz  : {imgsz}px")
-    print(f"[TRAIN] Batch     : {batch}")
+    print(f"[TRAIN] Profil    : {resolved_profile} (arg={training_profile})")
+    print(f"[TRAIN] Epochs    : {final_epochs}")
+    print(f"[TRAIN] Image sz  : {final_imgsz}px")
+    print(f"[TRAIN] Batch     : {final_batch}")
+    print(f"[TRAIN] Patience  : {final_patience}")
     print(f"[TRAIN] Augment   : {resolved_preset} (arg={aug_preset})")
     print(f"{'=' * 60}\n")
 
@@ -187,39 +266,36 @@ def train(
         print("[WARN] Pour top/left/bottom/right cela casse la sémantique des classes.")
         print("[WARN] Recommandé: --aug-preset axis_markers (ou auto).")
 
+    if resolved_profile == "high_performance":
+        print("[INFO] Profil high_performance actif: entrainement plus long et plus couteux.")
+        print("[INFO] Recommande sur GPU CUDA avec VRAM confortable.")
+
     yolo = YOLO(model)  # télécharge automatiquement si absent
 
-    yolo.train(
-        data=str(data_path.resolve()),
-        epochs=epochs,
-        imgsz=imgsz,
-        batch=batch,
-        device=device,  # "0"=GPU 0, "cpu"=CPU
-        project=out_dir,
-        name="yolo_impacts",
-        exist_ok=True,
-        # ── Optimiseur ──────────────────────────────────────────────────────
-        optimizer="AdamW",
-        lr0=0.001,
-        lrf=0.01,  # lr finale = lr0 * lrf
-        warmup_epochs=5,
-        patience=50,  # early stopping
-        # ── Augmentation ────────────────────────────────────────────────────
-        **aug_cfg,
-        # ── Seuils de détection ─────────────────────────────────────────────
-        conf=0.25,  # seuil de confiance pour l'évaluation
-        iou=0.5,  # IoU pour NMS
-        # ── Misc ────────────────────────────────────────────────────────────
-        plots=True,  # courbes loss/metrics
-        save=True,
-        verbose=True,
-    )
+    train_kwargs = {
+        "data": str(data_path.resolve()),
+        "device": device,  # "0"=GPU 0, "cpu"=CPU
+        "project": out_dir,
+        "name": "yolo_impacts",
+        "exist_ok": True,
+        # ── Seuils de détection ────────────────────────────────────────────
+        "conf": 0.25,
+        "iou": 0.5,
+        # ── Misc ──────────────────────────────────────────────────────────
+        "plots": True,
+        "save": True,
+        "verbose": True,
+    }
+    train_kwargs.update(aug_cfg)
+    train_kwargs.update(profile_cfg)
+
+    yolo.train(**train_kwargs)
 
     best_weights = Path(out_dir) / "yolo_impacts" / "weights" / "best.pt"
-    print(f"\n[OK] Entraînement terminé.")
+    print("\n[OK] Entraînement terminé.")
     print(f"[OK] Meilleurs poids → {best_weights}")
-    print(f"\nPour détecter les impacts :")
-    print(f"  python src/detect_impacts_yolo.py outputs/flatten --show")
+    print("\nPour détecter les impacts :")
+    print("  python src/detect_impacts_yolo.py outputs/flatten --show")
     return best_weights
 
 
@@ -254,6 +330,12 @@ if __name__ == "__main__":
         default=DEFAULT_BATCH,
         help=f"Taille de batch (défaut: {DEFAULT_BATCH}, réduire à 4 si OOM)",
     )
+    ap.add_argument(
+        "--patience",
+        type=int,
+        default=DEFAULT_PATIENCE,
+        help=f"Patience early stopping (défaut: {DEFAULT_PATIENCE})",
+    )
     ap.add_argument("--out", default=DEFAULT_OUT, help=f"Dossier de sortie (défaut: {DEFAULT_OUT})")
     ap.add_argument(
         "--device", default=DEFAULT_DEVICE, help="Device : '0' pour GPU, 'cpu' pour CPU (défaut: 0)"
@@ -263,6 +345,12 @@ if __name__ == "__main__":
         default=DEFAULT_AUG_PRESET,
         choices=["auto", "axis_markers", "baseline", "robust"],
         help="Preset d'augmentation (défaut: auto)",
+    )
+    ap.add_argument(
+        "--training-profile",
+        default=DEFAULT_TRAINING_PROFILE,
+        choices=["standard", "high_performance"],
+        help="Profil d'entrainement global (défaut: standard)",
     )
     args = ap.parse_args()
 
@@ -275,4 +363,6 @@ if __name__ == "__main__":
         args.out,
         args.device,
         args.aug_preset,
+        args.patience,
+        args.training_profile,
     )
