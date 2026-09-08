@@ -202,7 +202,7 @@ Important:
 
 Le script ecrit sous nom yolo_impacts, donc separe bien les dossiers de sortie pour ne pas ecraser les trainings.
 Commande recommandee pour les reperes:
-python train_yolo.py --data data/axis_yolo/dataset.yaml --model yolo11n.pt --epochs 200 --imgsz 1056 --batch 8 --out models_axis
+python train_yolo.py --data data/axis_yolo/dataset.yaml --model yolo11n.pt --epochs 200 --imgsz 1056 --batch 8 --out models_axis --aug-preset axis_markers
 
 Poids obtenus:
 
