@@ -131,6 +131,7 @@ def _training_profile_config(
     imgsz: int,
     batch: int,
     patience: int,
+    force_multi_scale: bool | None,
 ) -> tuple[str, dict]:
     """Resolve training profile into concrete training kwargs.
 
@@ -140,6 +141,7 @@ def _training_profile_config(
         imgsz: Requested image size.
         batch: Requested batch size.
         patience: Requested early-stopping patience.
+        force_multi_scale: Optional override for ``multi_scale``.
 
     Returns:
         Tuple ``(resolved_profile, kwargs)`` with profile-specific YOLO
@@ -149,6 +151,7 @@ def _training_profile_config(
         ValueError: If profile is unknown.
     """
     if profile == "standard":
+        multi_scale = False if force_multi_scale is None else force_multi_scale
         return profile, {
             "epochs": epochs,
             "imgsz": imgsz,
@@ -160,10 +163,14 @@ def _training_profile_config(
             "warmup_epochs": 5,
             "cos_lr": False,
             "cache": False,
-            "multi_scale": False,
+            "multi_scale": multi_scale,
         }
 
     if profile == "high_performance":
+        # Keep multi_scale disabled by default for stability. Some
+        # ultralytics/torch combinations crash with ZeroDivisionError in
+        # interpolate() when multi_scale is enabled.
+        multi_scale = False if force_multi_scale is None else force_multi_scale
         return profile, {
             "epochs": max(epochs, 450),
             "imgsz": max(imgsz, 1280),
@@ -174,8 +181,8 @@ def _training_profile_config(
             "lrf": 0.01,
             "warmup_epochs": 8,
             "cos_lr": True,
-            "cache": True,
-            "multi_scale": True,
+            "cache": "disk",
+            "multi_scale": multi_scale,
             "close_mosaic": 20,
             "weight_decay": 0.0007,
             "save_period": 10,
@@ -208,6 +215,7 @@ def train(
     aug_preset: str = DEFAULT_AUG_PRESET,
     patience: int = DEFAULT_PATIENCE,
     training_profile: str = DEFAULT_TRAINING_PROFILE,
+    multi_scale: bool | None = None,
 ) -> Path:
     """Lance l'entraînement et retourne le path du meilleur modèle.
 
@@ -222,6 +230,7 @@ def train(
         aug_preset: Preset d'augmentation (``baseline`` ou ``robust``).
         patience: Patience pour l'early stopping.
         training_profile: Profil global d'entrainement.
+        multi_scale: Force multi-scale on/off. ``None`` keeps profile default.
 
     Returns:
         Path vers ``best.pt``.
@@ -242,6 +251,7 @@ def train(
         imgsz,
         batch,
         patience,
+        multi_scale,
     )
 
     final_epochs = int(profile_cfg["epochs"])
@@ -258,6 +268,7 @@ def train(
     print(f"[TRAIN] Image sz  : {final_imgsz}px")
     print(f"[TRAIN] Batch     : {final_batch}")
     print(f"[TRAIN] Patience  : {final_patience}")
+    print(f"[TRAIN] MultiScale: {profile_cfg['multi_scale']}")
     print(f"[TRAIN] Augment   : {resolved_preset} (arg={aug_preset})")
     print(f"{'=' * 60}\n")
 
@@ -269,6 +280,8 @@ def train(
     if resolved_profile == "high_performance":
         print("[INFO] Profil high_performance actif: entrainement plus long et plus couteux.")
         print("[INFO] Recommande sur GPU CUDA avec VRAM confortable.")
+        if profile_cfg["multi_scale"]:
+            print("[WARN] multi_scale=True peut provoquer des crashes selon la version Torch.")
 
     yolo = YOLO(model)  # télécharge automatiquement si absent
 
@@ -352,7 +365,21 @@ if __name__ == "__main__":
         choices=["standard", "high_performance"],
         help="Profil d'entrainement global (défaut: standard)",
     )
+    ap.add_argument(
+        "--multi-scale",
+        choices=["auto", "on", "off"],
+        default="auto",
+        help="Force le multi-scale (auto=profil, on/off=override explicite)",
+    )
     args = ap.parse_args()
+
+    multi_scale_override: bool | None
+    if args.multi_scale == "on":
+        multi_scale_override = True
+    elif args.multi_scale == "off":
+        multi_scale_override = False
+    else:
+        multi_scale_override = None
 
     train(
         args.data,
@@ -365,4 +392,5 @@ if __name__ == "__main__":
         args.aug_preset,
         args.patience,
         args.training_profile,
+        multi_scale_override,
     )
