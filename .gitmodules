@@ -1,0 +1,4 @@
+[submodule "mobile"]
+	path = mobile
+	url = https://github.com/RexmiCool/mobile.git
+	branch = main
