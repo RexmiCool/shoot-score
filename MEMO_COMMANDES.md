@@ -187,7 +187,7 @@ Script:
 prepare_axis_yolo_dataset.py
 
 Commande:
-python prepare_axis_yolo_dataset.py data/raw --out data/axis_yolo --val-ratio 0.2 --box-size 48
+python .\src\prepare_axis_yolo_dataset.py data/raw --out data/axis_yolo --val-ratio 0.2 --box-size 48
 
 Ce que ca produit:
 
@@ -212,7 +212,7 @@ Script:
 export_axis_yolo_onnx.py
 
 Commande:
-python export_axis_yolo_onnx.py --weights models_axis/yolo_impacts/weights/best.pt
+python .\src\export_axis_yolo_onnx.py --weights models_axis/yolo_impacts/weights/best.pt
 
 Asset cible:
 
