@@ -34,7 +34,7 @@ from pathlib import Path
 import cv2
 
 sys.path.insert(0, str(Path(__file__).parent))
-from flatten_target import MM_PER_PX_OUT
+from flatten_markers import MM_PER_PX
 
 # ── Paramètres ────────────────────────────────────────────────────────────────
 BBOX_SIZE_MM = 18.0  # taille de la bbox autour de chaque impact (mm)
@@ -92,7 +92,7 @@ def prepare_dataset(
 
         # mm/px depuis rings.json, fallback nominal
         rings_path = lp.parent / f"{stem}_rings.json"
-        mm_per_px = MM_PER_PX_OUT
+        mm_per_px = MM_PER_PX
         if rings_path.exists():
             with open(rings_path, encoding="utf-8") as f:
                 mm_per_px = float(json.load(f)["mm_per_px_calibre"])

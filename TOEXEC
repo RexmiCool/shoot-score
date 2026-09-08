@@ -1,14 +1,27 @@
-uv run python src/detect_impacts_heatmap.py C:\Users\Utilisateur\Repos\shoot-score\outputs\20241117_095245\20241117_095245_flat.jpg --show
-Model weight L1 sum: 1535.502246
-Heatmap max value: 0.2369101
-[OK] 0 impacts → 20241117_095245_impacts_heatmap.jpg
+# ShootScore active commands (post marker migration)
 
+# Marker-based desktop pipeline
+python src/pipeline_markers.py data/raw/photo.jpg --show
+python src/pipeline_markers.py data/raw --out outputs --debug
 
+# Axis markers dataset + training
+python src/prepare_axis_yolo_dataset.py data/raw --out data/axis_yolo --val-ratio 0.2
+python src/train_yolo.py --data data/axis_yolo/dataset.yaml --model yolo11n.pt --epochs 200 --imgsz 1056
 
-uv run python src/detect_impacts_heatmap.py C:\Users\Utilisateur\Repos\shoot-score\outputs\20241117_095245\20241117_095245_flat.jpg --show
+# Impacts dataset + training
+python src/prepare_yolo_dataset.py outputs --out data/yolo --val-ratio 0.2
+python src/train_yolo.py --data data/yolo/dataset.yaml --model yolo11n.pt --epochs 200 --imgsz 1056
 
-# Dense heatmap workflow (PC -> mobile)
-uv run python src/prepare_heatmap_dataset.py outputs --out data/impacts_heatmap --val-ratio 0.2
-uv run python src/train_heatmap_cnn.py data/impacts_heatmap --epochs 60 --batch 4 --lr 1e-3
-uv run python src/export_heatmap_tflite.py --weights models/impacts_heatmap/model_best.pt --tflite mobile/android/app/src/main/assets/impact_heatmap_cnn.tflite
-uv run python src/test_heatmap_tflite.py outputs/20241117_095245/20241117_095245_flat.jpg --model mobile/android/app/src/main/assets/impact_heatmap_cnn.tflite
+# Export impacts model to Android assets
+python src/export_onnx.py
+
+# Mobile app
+Push-Location mobile
+npm install
+npx expo start
+Pop-Location
+
+Push-Location mobile/android
+.\gradlew.bat app:compileDebugKotlin
+.\gradlew.bat app:installRelease
+Pop-Location

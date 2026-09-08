@@ -15,16 +15,8 @@ dependencies = [
   "ultralytics>=8.4.33",
   "torch>=2.0 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
   "torchvision>=0.21 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
-  "onnxruntime>=1.17 ; sys_platform == 'linux' and platform_machine == 'aarch64'",
   "onnx>=1.21.0",
   "onnxruntime>=1.24.3",
-  "tensorflow>=2.21.0",
-  "onnx2tf>=1.28.8",
-  "flatbuffers>=25.12.19",
-  "tf-keras>=2.21.0",
-  "onnx-graphsurgeon>=0.6.1",
-  "ai-edge-litert>=2.1.4",
-  "sng4onnx>=2.0.1",
 ]
 
 [project.optional-dependencies]

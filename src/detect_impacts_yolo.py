@@ -14,16 +14,17 @@ Usage :
 
 import argparse
 import json
+import os
 import sys
 from math import pi
 from pathlib import Path
+import subprocess
 
 import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from localize_target import _open_file
-from flatten_target import OUTPUT_CENTER, MM_PER_PX_OUT
+from flatten_markers import OUTPUT_CENTER, MM_PER_PX
 
 # ── Détection ultralytics (facultatif : absent sur RPi3) ──────────────────────
 try:
@@ -37,6 +38,15 @@ except Exception:
 DEFAULT_WEIGHTS = "runs/detect/models/yolo_impacts/weights/best.pt"
 DEFAULT_CONF = 0.25  # seuil de confiance minimum
 DEFAULT_IOU = 0.4  # seuil IoU pour NMS (évite les doublons)
+
+
+def _open_file(path: Path) -> None:
+    if sys.platform == "win32":
+        os.startfile(str(path))
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)])
+    else:
+        subprocess.Popen(["xdg-open", str(path)])
 
 
 def _auto_device() -> str:
@@ -250,7 +260,7 @@ def detect_impacts_yolo(
 
     rings_path = flat_path.parent / f"{stem}_rings.json"
     rings_data = None
-    mm_per_px = MM_PER_PX_OUT
+    mm_per_px = MM_PER_PX
     if rings_path.exists():
         with open(rings_path, encoding="utf-8") as f:
             rings_data = json.load(f)
