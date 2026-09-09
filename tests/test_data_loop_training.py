@@ -37,6 +37,43 @@ class DataLoopTrainingTest(TestCase):
             )
             self.assertTrue(any_cmd)
 
+    def test_impact_batch_auto_generates_predictions_then_launches_manual_review(self):
+        impact_module_path = Path(__file__).resolve().parents[1] / "src" / "process_impact_batch.py"
+        spec = importlib.util.spec_from_file_location("impact_batch_under_test", impact_module_path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec is not None and spec.loader is not None
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = Path(tmp_dir) / "homographied" / "accepted"
+            pending = Path(tmp_dir) / "impact_labelled" / "pending"
+            accepted = Path(tmp_dir) / "impact_labelled" / "accepted"
+            src.mkdir(parents=True)
+            image_path = src / "sample_flat.jpg"
+            image_path.write_bytes(b"fake")
+            weights = Path(tmp_dir) / "best.pt"
+            weights.write_bytes(b"fake")
+
+            with mock.patch.object(module, "detect_impacts_yolo") as detect_mock:
+                detect_mock.return_value = pending / "sample_flat.jpg"
+                with mock.patch("subprocess.run") as run_mock:
+                    module.process_impact_batch(src, pending, accepted, weights=weights)
+
+            self.assertTrue(detect_mock.called)
+            self.assertTrue(run_mock.called)
+            commands = [call.args[0] if hasattr(call, "args") else call[0] for call in run_mock.call_args_list]
+            any_labeler = any(
+                isinstance(cmd, (list, tuple)) and any("label_impacts.py" in str(part) for part in cmd)
+                for cmd in commands
+            )
+            self.assertTrue(any_labeler)
+            self.assertFalse(
+                any(
+                    isinstance(cmd, (list, tuple)) and "--skip-done" in cmd
+                    for cmd in commands
+                )
+            )
+
 
 if __name__ == "__main__":
     import unittest
