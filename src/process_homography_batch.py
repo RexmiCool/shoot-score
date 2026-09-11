@@ -30,13 +30,17 @@ def iter_images(path: Path) -> list[Path]:
     )
 
 
-def filter_new_images(src: Path, accepted_dir: Path, rejected_dir: Path) -> list[Path]:
-    """Keep only images not already processed by the downstream homography queues."""
+def filter_new_images(src: Path, pending_dir: Path, accepted_dir: Path, rejected_dir: Path) -> list[Path]:
+    """Keep only images not already flattened or already reviewed in downstream queues."""
     processed = set()
-    for history_dir in (accepted_dir, rejected_dir):
+    for history_dir in (pending_dir, accepted_dir, rejected_dir):
         if history_dir.exists():
-            processed |= {p.name for p in history_dir.iterdir() if p.is_file()}
-    return [p for p in iter_images(src) if p.name not in processed]
+            processed |= {
+                p.stem.removesuffix("_flat")
+                for p in history_dir.iterdir()
+                if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+            }
+    return [p for p in iter_images(src) if p.stem not in processed]
 
 
 def process_homography_batch(
@@ -56,9 +60,9 @@ def process_homography_batch(
     accepted_dir.mkdir(parents=True, exist_ok=True)
     rejected_dir.mkdir(parents=True, exist_ok=True)
 
-    images = filter_new_images(src, accepted_dir, rejected_dir)
+    images = filter_new_images(src, pending_dir, accepted_dir, rejected_dir)
     if not images:
-        print(f"[INFO] No new image in {src} (already in accepted/rejected).")
+        print(f"[INFO] No new image in {src} (already in pending/accepted/rejected).")
         return 0
 
     count = 0

@@ -121,7 +121,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, default=Path("data/axis_markers"))
     parser.add_argument("--out", type=Path, default=Path("models/axis_markers"))
-    parser.add_argument("--epochs", type=int, default=80)
+    parser.add_argument("--epochs", type=int, default=500)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--device", default="auto")

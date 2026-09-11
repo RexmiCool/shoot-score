@@ -1,7 +1,7 @@
 """
 Entraîne YOLOv8 sur le dataset d'impacts de balles.
 
-Utilise le modèle yolov8n.pt (nano) pré-entraîné sur COCO comme point de départ.
+Utilise le modèle yolov8m.pt (nano) pré-entraîné sur COCO comme point de départ.
 Le fine-tuning prend ~10–30 min sur GPU pour 200 epochs avec ~30 images.
 
 Augmentations clés activées :
@@ -21,14 +21,14 @@ from pathlib import Path
 
 # ── Paramètres d'entraînement ─────────────────────────────────────────────────
 DEFAULT_DATA = "data/yolo/dataset.yaml"
-DEFAULT_MODEL = "yolov8n.pt"  # nano = rapide, bon pour peu de données
-DEFAULT_EPOCHS = 200
-DEFAULT_IMGSZ = 1056  # résolution d'entrainement (1056 ou 1024)
-DEFAULT_BATCH = 8  # à réduire si OOM GPU (4 si 8Go VRAM)
+DEFAULT_MODEL = "yolo11m.pt"  # nano = rapide, bon pour peu de données
+DEFAULT_EPOCHS = 150
+DEFAULT_IMGSZ = 1280  # résolution d'entrainement (1280 ou 1024)
+DEFAULT_BATCH = 4  # à réduire si OOM GPU (4 si 8Go VRAM)
 DEFAULT_OUT = "models"  # dossier de sortie des poids
 DEFAULT_AUG_PRESET = "auto"
-DEFAULT_PATIENCE = 50
-DEFAULT_TRAINING_PROFILE = "standard"
+DEFAULT_PATIENCE = 30
+DEFAULT_TRAINING_PROFILE = "high_performance"
 
 
 def _dataset_role(data_path: Path) -> str:
@@ -221,7 +221,7 @@ def train(
 
     Args:
         data: Path vers ``dataset.yaml`` YOLO.
-        model: Poids de départ (ex: ``yolov8n.pt``).
+        model: Poids de départ (ex: ``yolov8m.pt``).
         epochs: Nombre d'epochs.
         imgsz: Résolution d'entraînement.
         batch: Batch size.

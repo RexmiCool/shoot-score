@@ -17,3 +17,7 @@ runs/
 outputs/
 data/
 # Ignore local deployment archives
+
+
+old_*
+yolo11x.pt

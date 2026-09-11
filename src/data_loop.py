@@ -54,6 +54,19 @@ def iter_images(path: Path) -> list[Path]:
     )
 
 
+def sync_best_model_to_standard_path(candidate_paths: list[Path], target_path: Path, label: str) -> bool:
+    """Copy a trained YOLO model into the canonical location expected by the labeler."""
+    for source in candidate_paths:
+        if not source.exists():
+            continue
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        if source.resolve() != target_path.resolve():
+            shutil.copy2(source, target_path)
+        print(f"[OK] {label} weights synced to {target_path}")
+        return True
+    return False
+
+
 def maybe_train_axis_model(root: Path) -> bool:
     """Prepare and train the axis YOLO model from the accepted axis dataset."""
     accepted_dir = root / "axis_labelled" / "accepted"
@@ -89,13 +102,13 @@ def maybe_train_axis_model(root: Path) -> bool:
             "--data",
             str(dataset_dir / "dataset.yaml"),
             "--model",
-            "yolo11n.pt",
+            "yolo11m.pt",
             "--epochs",
-            "80",
+            "500",
             "--imgsz",
-            "1056",
+            "1280",
             "--batch",
-            "8",
+            "4",
             "--out",
             str(model_out),
             "--aug-preset",
@@ -104,12 +117,13 @@ def maybe_train_axis_model(root: Path) -> bool:
         check=False,
     )
 
-    source_weights = model_out / "yolo_impacts" / "weights" / "best.pt"
-    target_weights = model_out / "weights" / "best.pt"
-    if source_weights.exists():
-        target_weights.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_weights, target_weights)
-        print(f"[OK] Axis weights synced to {target_weights}")
+    target_weights = root.parent / "models" / "axis_yolo" / "weights" / "best.pt"
+    candidates = [
+        model_out / "weights" / "best.pt",
+        Path("runs") / "detect" / "models" / "axis_yolo" / "weights" / "best.pt",
+        root.parent / "runs" / "detect" / "models" / "axis_yolo" / "weights" / "best.pt",
+    ]
+    sync_best_model_to_standard_path(candidates, target_weights, "Axis")
 
     return True
 
@@ -149,13 +163,13 @@ def maybe_train_impact_model(root: Path) -> bool:
             "--data",
             str(dataset_dir / "dataset.yaml"),
             "--model",
-            "yolo11n.pt",
+            "yolo11m.pt",
             "--epochs",
-            "200",
+            "500",
             "--imgsz",
-            "1056",
+            "1280",
             "--batch",
-            "8",
+            "4",
             "--out",
             str(model_out),
             "--aug-preset",
@@ -163,6 +177,14 @@ def maybe_train_impact_model(root: Path) -> bool:
         ],
         check=False,
     )
+
+    target_weights = root.parent / "models" / "yolo_impacts" / "weights" / "best.pt"
+    candidates = [
+        model_out / "yolo_impacts" / "weights" / "best.pt",
+        Path("runs") / "detect" / "models" / "yolo_impacts" / "weights" / "best.pt",
+        root.parent / "runs" / "detect" / "models" / "yolo_impacts" / "weights" / "best.pt",
+    ]
+    sync_best_model_to_standard_path(candidates, target_weights, "Impact")
     return True
 
 

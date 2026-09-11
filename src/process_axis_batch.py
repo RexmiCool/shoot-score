@@ -32,10 +32,10 @@ def iter_images(path: Path) -> list[Path]:
     )
 
 
-def filter_new_images(src: Path, accepted_dir: Path, rejected_dir: Path) -> list[Path]:
-    """Keep only images not already processed by the downstream accepted/rejected queues."""
+def filter_new_images(src: Path, pending_dir: Path, accepted_dir: Path, rejected_dir: Path) -> list[Path]:
+    """Keep only images not already present in the pending or final queues."""
     processed = set()
-    for history_dir in (accepted_dir, rejected_dir):
+    for history_dir in (pending_dir, accepted_dir, rejected_dir):
         if history_dir.exists():
             processed |= {p.name for p in history_dir.iterdir() if p.is_file()}
     return [p for p in iter_images(src) if p.name not in processed]
@@ -85,9 +85,9 @@ def process_axis_batch(
     rejected_dir = Path(rejected_dir) if rejected_dir is not None else accepted_dir.parent / "rejected"
     rejected_dir.mkdir(parents=True, exist_ok=True)
 
-    images = filter_new_images(src, accepted_dir, rejected_dir)
+    images = filter_new_images(src, pending_dir, accepted_dir, rejected_dir)
     if not images:
-        print(f"[INFO] No new image in {src} (already in accepted/rejected).")
+        print(f"[INFO] No new image in {src} (already in pending/accepted/rejected).")
         return 0
 
     model_path = Path(weights) if weights else None
@@ -112,22 +112,21 @@ def process_axis_batch(
             print(f"[PENDING] No axis model: {dest.name} copied to pending for manual labelling.")
         count += 1
 
-    if not used_model and images:
-        labeler = Path(__file__).with_name("label_axis_markers.py")
-        print(f"\n[MANUAL] Launching axis labeler on {pending_dir}")
-        subprocess.run(
-            [
-                sys.executable,
-                str(labeler),
-                str(pending_dir),
-                "--accepted-dir",
-                str(accepted_dir),
-                "--rejected-dir",
-                str(Path(__file__).resolve().parent.parent / "data" / "axis_labelled" / "rejected"),
-                "--skip-done",
-            ],
-            check=False,
-        )
+    # if not used_model and images:
+    labeler = Path(__file__).with_name("label_axis_markers.py")
+    print(f"\n[MANUAL] Launching axis labeler on {pending_dir}")
+    subprocess.run(
+        [
+            sys.executable,
+            str(labeler),
+            str(pending_dir),
+            "--accepted-dir",
+            str(accepted_dir),
+            "--rejected-dir",
+            str(Path(__file__).resolve().parent.parent / "data" / "axis_labelled" / "rejected"),
+        ],
+        check=False,
+    )
 
     return count
 

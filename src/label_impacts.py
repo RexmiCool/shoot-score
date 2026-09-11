@@ -43,6 +43,7 @@ class Labeler:
         self.flat_path = flat_path
         self.stem = flat_path.stem.removesuffix("_flat")
         self.json_path = flat_path.parent / f"{self.stem}_labels.json"
+        self.auto_json_path = flat_path.parent / f"{self.stem}_impacts_yolo.json"
         self.accepted_dir = accepted_dir
         self.rejected_dir = rejected_dir
 
@@ -69,11 +70,17 @@ class Labeler:
     # ── I/O ────────────────────────────────────────────────────────────────────
 
     def _load(self):
+        source_json = None
         if self.json_path.exists():
-            with open(self.json_path, encoding="utf-8") as f:
+            source_json = self.json_path
+        elif self.auto_json_path.exists():
+            source_json = self.auto_json_path
+
+        if source_json is not None:
+            with open(source_json, encoding="utf-8") as f:
                 data = json.load(f)
             self.impacts = [(int(p["cx_px"]), int(p["cy_px"])) for p in data.get("impacts", [])]
-            print(f"[LOAD] {len(self.impacts)} impact(s) chargé(s) depuis {self.json_path.name}")
+            print(f"[LOAD] {len(self.impacts)} impact(s) chargé(s) depuis {source_json.name}")
         else:
             print(f"[NEW ] Pas de fichier existant — on repart de zéro.")
 

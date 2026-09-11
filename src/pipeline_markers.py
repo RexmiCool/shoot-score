@@ -147,6 +147,7 @@ def _main() -> None:
 
     out_root = Path(args.out)
     ok = fail = 0
+    fails = []
     for image_path in images:
         if run_pipeline(
             image_path, out_root, args.axis_weights, args.impact_weights,
@@ -155,6 +156,12 @@ def _main() -> None:
             ok += 1
         else:
             fail += 1
+            fails.append(image_path.name)
+
+
+    print("Echecs :")
+    for e in fails:
+        print(f"  - {e}")
 
     print(f"\n{'=' * 62}\nTerminé : {ok} OK / {fail} échec(s)\nRésultats : {out_root.resolve()}")
 
