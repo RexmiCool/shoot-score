@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  shootscore-api:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./db:/app/db
+    environment:
+      - API_SECRET_TOKEN=${API_SECRET_TOKEN:-changeme-very-secure-token}
+      - UPLOAD_DIR=/app/data/uploads
+      - DB_PATH=/app/db/shootscore.db
+    restart: unless-stopped
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  internal:
+    driver: bridge
