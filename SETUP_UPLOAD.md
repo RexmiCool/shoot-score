@@ -82,8 +82,8 @@ Retry automatique (backoff exponentiel) en cas d'échec
 2. **Éditer `mobile/services/uploadConfig.ts`** :
    ```typescript
    export const UPLOAD_CONFIG = {
-     UPLOAD_SERVER_URL: 'http://192.168.1.42:8000',  // Remplacer IP
-     UPLOAD_API_TOKEN: 'a1b2c3d4e5f6...', // Token du .env du serveur
+     UPLOAD_SERVER_URL: 'http://100.77.3.9:8000',  // Remplacer IP
+     UPLOAD_API_TOKEN: '4be63efcf7f582c8a545164ea80585273d89e176f209c6490814ddd4a9374b3b', // Token du .env du serveur
      UPLOADS_ENABLED: true,
      // ...
    };

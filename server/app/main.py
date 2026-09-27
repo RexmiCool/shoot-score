@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, UploadFile, File, Header, HTTPException, status
+from fastapi import FastAPI, UploadFile, File, Header, HTTPException, status, Form
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import logging
@@ -122,9 +122,9 @@ class UploadMetadata(BaseModel):
 @app.post("/api/v1/upload")
 async def upload_image(
     file: UploadFile = File(...),
+    series_id: str = Form(...),
+    shot_id: str = Form(...),
     authorization: Optional[str] = Header(None),
-    series_id: str = None,
-    shot_id: str = None,
 ):
     """
     Endpoint d'upload d'images brutes.
@@ -138,10 +138,6 @@ async def upload_image(
     
     # Authentification
     verify_token(authorization)
-    
-    # Validation des paramètres
-    if not series_id or not shot_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing series_id or shot_id")
     
     try:
         # Lire le fichier
