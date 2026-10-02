@@ -1,0 +1,8 @@
+shootscore.duckdns.org {
+
+    reverse_proxy shootscore-api:8000
+
+    encode gzip
+
+    log
+}

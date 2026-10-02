@@ -9,12 +9,19 @@ from fastapi import FastAPI, UploadFile, File, Header, HTTPException, status, Fo
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import logging
+from fastapi import Depends
 
 app = FastAPI(title="ShootScore Upload API", version="1.0.0")
 logger = logging.getLogger(__name__)
 
 # Configuration
-API_SECRET_TOKEN = os.getenv("API_SECRET_TOKEN", "changeme-very-secure-token")
+API_SECRET_TOKEN = os.getenv("API_SECRET_TOKEN")
+
+if not API_SECRET_TOKEN:
+    raise RuntimeError(
+        "API_SECRET_TOKEN environment variable is required"
+    )
+
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/app/data/uploads"))
 DB_PATH = Path(os.getenv("DB_PATH", "/app/db/shootscore.db"))
 
@@ -24,7 +31,6 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Logger
 logging.basicConfig(level=logging.INFO)
-
 
 # ── Base de données ────────────────────────────────────────────────────────
 
@@ -83,21 +89,28 @@ def record_upload(series_id: str, shot_id: str, filename: str, checksum: str, fi
 
 
 # ── Authentification ───────────────────────────────────────────────────────
-
-def verify_token(authorization: Optional[str] = Header(None)) -> bool:
-    """Vérifie le token Bearer."""
+def verify_token(
+    authorization: Optional[str] = Header(None)
+):
     if not authorization:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authorization header")
-    
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization header"
+        )
+
     parts = authorization.split()
+
     if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authorization header")
-    
-    token = parts[1]
-    if token != API_SECRET_TOKEN:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    
-    return True
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header"
+        )
+
+    if parts[1] != API_SECRET_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key"
+        )
 
 
 # ── Routes ────────────────────────────────────────────────────────────────
@@ -124,7 +137,7 @@ async def upload_image(
     file: UploadFile = File(...),
     series_id: str = Form(...),
     shot_id: str = Form(...),
-    authorization: Optional[str] = Header(None),
+    _: None = Depends(verify_token)
 ):
     """
     Endpoint d'upload d'images brutes.
@@ -137,7 +150,7 @@ async def upload_image(
     """
     
     # Authentification
-    verify_token(authorization)
+    # Authentification is handled by Depends(verify_token)
     
     try:
         # Lire le fichier
@@ -193,4 +206,10 @@ async def upload_image(
 @app.get("/")
 async def root():
     """Endpoint racine."""
-    return {"message": "ShootScore Upload API v1.0"}
+    return {"status": "ok"}
+
+@app.get("/api/v1/me")
+async def me(_: None = Depends(verify_token)):
+    return {
+        "authenticated": True
+    }
